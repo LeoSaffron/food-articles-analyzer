@@ -1,0 +1,10 @@
+# Navigate to the root of the project
+cd text-classifier-api
+
+# Build the Docker image
+docker build -t text-classifier-api .
+
+# Run the container
+docker run -p 5000:5000 text-classifier-api
+
+curl -X POST http://localhost:5000/predict \     -H "Content-Type: application/json" \     -d "{\"text\":\"tofu\"}"

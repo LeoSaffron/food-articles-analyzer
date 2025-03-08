@@ -1,0 +1,424 @@
+<head>
+<style>
+  body {
+    background-color: #f9f9f9;
+  }
+</style>
+<!--  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Your Page Title</title>-->
+  <!-- Link to the external CSS file --> 
+  <link rel="stylesheet" href="styles.css">
+</head><body>
+<script>
+  document.addEventListener("DOMContentLoaded", function() {
+    const analyzeButton = document.getElementById('analyzeButton');
+    const urlInput = document.getElementById('urlInput');
+    const resultsDiv = document.getElementById('results');
+
+    analyzeButton.addEventListener('click', async function() {
+      const url = urlInput.value;
+      if (!url) {
+        alert('Please enter a valid URL');
+        return;
+      }
+      resultsDiv.innerHTML = 'Analyzing recipe...';
+
+      try {
+        // Make the actual API call to your Flask endpoint
+        const response = await axios.get('http://localhost:8086/analyze', {
+          params: { url: url }
+        });
+        console.log("API response:", response.data);
+        displayResults(response.data);
+      } catch (error) {
+        console.error('Error calling the API:', error);
+        resultsDiv.innerHTML = 'Error analyzing recipe. Please try again.';
+      }
+    });
+
+    function displayResults(data) {
+      let html = '';
+      
+      // Check for error in response
+      if(data.error) {
+        html = `<p>Error: ${data.error}</p>`;
+      } else {
+        // Display overall recipe classification
+        if (!data.recipe_is_plant_based) {
+          html += '<h2>This recipe is not plant based.</h2>';
+        } else {
+          html += '<h2>Plant Based Recipe Analysis</h2>';
+        }
+        html += `<p>Recipe URL: ${data.recipe_url || ''}</p>`;
+        html += '<ul class="ingredient-list">';
+        // Iterate over each ingredient from the API response
+        data.ingredients.forEach(item => {
+          html += `<li>
+                    Ingredient: ${item.ingredient} – Plant based: ${item.is_plant_based ? "Yes" : "No"} 
+                    (Prediction: ${item.prediction})
+                   </li>`;
+        });
+        html += '</ul>';
+      }
+      
+      resultsDiv.innerHTML = html;
+    }
+  });
+</script>
+
+
+  <h1>VeganChecker: Vegan Recipe Analyzer</h1>
+
+  <div id="siteInfo">
+    <h2>Welcome to VeganChecker!</h2>
+    <div class="site-info-content">
+      <p>VeganChecker analyzes recipes for vegan compatibility. Our site offers single recipe analysis, bulk recipe scanning, and additional dietary filters. Enter a recipe URL below or switch to bulk mode for multiple recipe analysis.</p>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="main-content">
+      <div class="mode-selector">
+        <button id="singleModeBtn" class="mode-button active">Single Recipe</button>
+        <button id="bulkModeBtn" class="mode-button">Bulk Recipes</button>
+      </div>
+
+      <div class="tag-container">
+        <div class="tag active">Vegan</div>
+        <div class="tag">Gluten-Free</div>
+        <div class="tag">Raw</div>
+        <div class="tag">Low Fat</div>
+        <div class="tag">Low Carb</div>
+      </div>
+
+      <div id="singleModeContainer">
+        <div class="input-container">
+          <input type="url" id="urlInput" placeholder="Enter recipe URL here">
+          <button id="analyzeButton" class="analyze-button">Analyze Recipe</button>
+        </div>
+        <div id="results"></div>
+      </div>
+
+      <div id="bulkModeContainer">
+        <div class="input-container">
+          <textarea id="bulkUrlInput" rows="5" placeholder="Enter multiple recipe URLs (one per line) or a URL containing links to recipes"></textarea>
+          <button id="bulkAnalyzeButton" class="analyze-button">Analyze Bulk Recipes</button>
+        </div>
+        <div id="bulkResults"></div>
+      </div>
+    </div>
+
+    <div class="side-panel">
+      <div id="recentContainer">
+        <h2>Recent Searches</h2>
+        <ul id="recentList"></ul>
+      </div>
+      <div id="funFactContainer">
+        <h2>Did You Know?</h2>
+        <p>The percentage of vegan recipes has increased by 20% over the last 5 years since 2018!</p>
+        <div id="barPlot"></div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <div class="footer-content">
+      <div class="footer-section">
+        <h3>Contact Us</h3>
+        <p>Email: <a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="4c25222a230c3a292b2d222f24292f27293e622d3c3c">[email&#160;protected]</a></p>
+        <p>Phone: +1 (555) 123-4567</p>
+        <p>Address: 123 Vegan Street, Green City, VC 12345</p>
+      </div>
+      <div class="footer-section">
+        <h3>About Us</h3>
+        <p>VeganChecker was developed by a passionate team of vegan developers and nutritionists dedicated to making vegan living easier for everyone.</p>
+      </div>
+      <div class="footer-section">
+        <h3>Quick Links</h3>
+        <ul>
+          <li><a href="https://veganchecker.app/about">About</a></li>
+          <li><a href="https://veganchecker.app/privacy">Privacy Policy</a></li>
+          <li><a href="https://veganchecker.app/terms">Terms of Service</a></li>
+          <li><a href="https://veganchecker.app/faq">FAQ</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <p>&copy; 2023 VeganChecker. All rights reserved.</p>
+    </div>
+  </footer>
+
+  <script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/axios/0.21.1/axios.min.js"></script>
+  <script>
+    const singleModeBtn = document.getElementById('singleModeBtn');
+    const bulkModeBtn = document.getElementById('bulkModeBtn');
+    const singleModeContainer = document.getElementById('singleModeContainer');
+    const bulkModeContainer = document.getElementById('bulkModeContainer');
+    const urlInput = document.getElementById('urlInput');
+    const analyzeButton = document.getElementById('analyzeButton');
+    const resultsDiv = document.getElementById('results');
+    const bulkUrlInput = document.getElementById('bulkUrlInput');
+    const bulkAnalyzeButton = document.getElementById('bulkAnalyzeButton');
+    const recentList = document.getElementById('recentList');
+    const tags = document.querySelectorAll('.tag');
+
+    singleModeBtn.addEventListener('click', () => switchMode('single'));
+    bulkModeBtn.addEventListener('click', () => switchMode('bulk'));
+    analyzeButton.addEventListener('click', analyzeSingleRecipe);
+    bulkAnalyzeButton.addEventListener('click', analyzeBulkRecipes);
+
+    let recentSearches = JSON.parse(localStorage.getItem('recentSearches')) || [];
+    let activeTags = ['Vegan'];
+
+    tags.forEach(tag => {
+      tag.addEventListener('click', () => toggleTag(tag));
+    });
+
+    function toggleTag(tag) {
+      if (tag.textContent === 'Vegan') return; // Vegan is always active
+      tag.classList.toggle('active');
+      const tagName = tag.textContent;
+      if (tag.classList.contains('active')) {
+        activeTags.push(tagName);
+      } else {
+        activeTags = activeTags.filter(t => t !== tagName);
+      }
+      // Re-analyze if there's already a result
+      if (singleModeContainer.style.display !== 'none' && resultsDiv.innerHTML) {
+        analyzeSingleRecipe();
+      } else if (bulkModeContainer.style.display !== 'none' && bulkResultsDiv.innerHTML) {
+        analyzeBulkRecipes();
+      }
+    }
+
+    function switchMode(mode) {
+      if (mode === 'single') {
+        singleModeBtn.classList.add('active');
+        bulkModeBtn.classList.remove('active');
+        singleModeContainer.style.display = 'block';
+        bulkModeContainer.style.display = 'none';
+      } else {
+        singleModeBtn.classList.remove('active');
+        bulkModeBtn.classList.add('active');
+        singleModeContainer.style.display = 'none';
+        bulkModeContainer.style.display = 'block';
+      }
+    }
+
+    async function analyzeSingleRecipe() {
+      const url = urlInput.value;
+      if (!url) {
+        alert('Please enter a valid URL');
+        return;
+      }
+
+      try {
+        resultsDiv.innerHTML = 'Analyzing recipe...';
+        const recipe = await simulateAPICall(url);
+        displaySingleResults(recipe);
+        addToRecentSearches(url, 'single');
+      } catch (error) {
+        resultsDiv.innerHTML = 'Error analyzing recipe. Please try again.';
+      }
+    }
+
+    function displaySingleResults(recipe) {
+      if (!recipe.vegan) {
+        resultsDiv.innerHTML = '<h2>This recipe is not vegan.</h2>';
+        return;
+      }
+
+      let html = '<h2>Vegan Recipe Analysis</h2>';
+      html += `<h3>${recipe.title}</h3>`;
+      html += '<ul class="ingredient-list">';
+      
+      recipe.ingredients.forEach(ing => {
+        html += `<li class="ingredient-item vegan">${ing}</li>`;
+      });
+      
+      html += '</ul>';
+
+      html += '<h4>Tags:</h4>';
+      html += '<ul>';
+      recipe.tags.forEach(tag => {
+        if (activeTags.includes(tag)) {
+          html += `<li>${tag}</li>`;
+        }
+      });
+      html += '</ul>';
+
+      resultsDiv.innerHTML = html;
+    }
+
+    async function analyzeBulkRecipes() {
+      const urls = bulkUrlInput.value.split('\n').filter(url => url.trim() !== '');
+      if (urls.length === 0) {
+        alert('Please enter at least one valid URL');
+        return;
+      }
+
+      try {
+        bulkResultsDiv.innerHTML = 'Analyzing recipes...';
+        const recipes = await simulateBulkAPICall(urls);
+        displayBulkResults(recipes);
+        addToRecentSearches(urls.join('\n'), 'bulk');
+      } catch (error) {
+        bulkResultsDiv.innerHTML = 'Error analyzing recipes. Please try again.';
+      }
+    }
+
+    function displayBulkResults(recipes) {
+      let html = '<h2>Bulk Vegan Recipe Analysis</h2>';
+      
+      const filteredRecipes = recipes.filter(recipe => {
+        return recipe.vegan && activeTags.every(tag => recipe.tags.includes(tag));
+      });
+
+      if (filteredRecipes.length === 0) {
+        html += '<p>No recipes match the selected criteria.</p>';
+      } else {
+        filteredRecipes.forEach(recipe => {
+          html += `<div class="recipe-item">
+            <div class="recipe-title">${recipe.title}</div>
+            <div>Tags: ${recipe.tags.filter(tag => activeTags.includes(tag)).join(', ')}</div>
+          </div>`;
+        });
+      }
+      
+      bulkResultsDiv.innerHTML = html;
+    }
+
+    function addToRecentSearches(url, type) {
+      const search = { url, type, date: new Date().toISOString() };
+      recentSearches = [search, ...recentSearches.filter(s => s.url !== url)].slice(0, 5);
+      localStorage.setItem('recentSearches', JSON.stringify(recentSearches));
+      updateRecentList();
+    }
+
+    function updateRecentList() {
+      recentList.innerHTML = '';
+      recentSearches.forEach(search => {
+        const li = document.createElement('li');
+        li.className = 'recent-item';
+        li.textContent = `${search.type === 'single' ? 'Single' : 'Bulk'}: ${search.url.substring(0, 50)}${search.url.length > 50 ? '...' : ''}`;
+        li.addEventListener('click', () => loadRecentSearch(search));
+        recentList.appendChild(li);
+      });
+    }
+
+    function loadRecentSearch(search) {
+      if (search.type === 'single') {
+        switchMode('single');
+        urlInput.value = search.url;
+        analyzeSingleRecipe();
+      } else {
+        switchMode('bulk');
+        bulkUrlInput.value = search.url;
+        analyzeBulkRecipes();
+      }
+    }
+
+    async function simulateAPICall(url) {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      return {
+        title: "Vegan Tofu Stir Fry",
+        vegan: true,
+        ingredients: [
+          "Firm tofu",
+          "Bell peppers",
+          "Broccoli",
+          "Carrots",
+          "Soy sauce",
+          "Sesame oil",
+          "Garlic",
+          "Ginger"
+        ],
+        tags: ["Vegan", "Gluten-Free", "Low Fat"]
+      };
+    }
+
+    async function simulateBulkAPICall(urls) {
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      return [
+        { title: "Vegan Tofu Stir Fry", vegan: true, tags: ["Vegan", "Gluten-Free", "Low Fat"] },
+        { title: "Raw Vegan Salad", vegan: true, tags: ["Vegan", "Raw", "Gluten-Free", "Low Fat", "Low Carb"] },
+        { title: "Vegan Lentil Soup", vegan: true, tags: ["Vegan", "Gluten-Free", "Low Fat"] },
+        { title: "Vegan Cauliflower Rice", vegan: true, tags: ["Vegan", "Low Carb", "Gluten-Free"] },
+        { title: "Vegan Avocado Toast", vegan: true, tags: ["Vegan", "Low Fat"] }
+      ];
+    }
+
+    function createBarPlot() {
+      const data = [
+        { year: 2018, percentage: 10 },
+        { year: 2019, percentage: 15 },
+        { year: 2020, percentage: 20 },
+        { year: 2021, percentage: 25 },
+        { year: 2022, percentage: 30 }
+      ];
+
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      svg.setAttribute("width", "100%");
+      svg.setAttribute("height", "150");
+
+      const barWidth = 20;
+      const barGap = 10;
+      const bottomMargin = 30;
+      const leftMargin = 30;
+
+      data.forEach((d, i) => {
+        const barHeight = (d.percentage / 30) * 120;
+        const x = leftMargin + i * (barWidth + barGap);
+        const y = 150 - bottomMargin - barHeight;
+
+        const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        rect.setAttribute("x", x);
+        rect.setAttribute("y", y);
+        rect.setAttribute("width", barWidth);
+        rect.setAttribute("height", barHeight);
+        rect.setAttribute("class", "bar");
+        svg.appendChild(rect);
+
+        const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        text.setAttribute("x", x + barWidth / 2);
+        text.setAttribute("y", y - 5);
+        text.setAttribute("class", "bar-label");
+        text.textContent = d.percentage + "%";
+        svg.appendChild(text);
+
+        const yearLabel = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        yearLabel.setAttribute("x", x + barWidth / 2);
+        yearLabel.setAttribute("y", 150 - bottomMargin + 20);
+        yearLabel.setAttribute("class", "bar-label");
+        yearLabel.textContent = d.year;
+        svg.appendChild(yearLabel);
+      });
+
+      const yAxisLabel = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      yAxisLabel.setAttribute("x", -100);
+      yAxisLabel.setAttribute("y", 15);
+      yAxisLabel.setAttribute("transform", "rotate(-90)");
+      yAxisLabel.setAttribute("class", "axis-label");
+      yAxisLabel.textContent = "Percentage of Vegan Recipes";
+      svg.appendChild(yAxisLabel);
+
+      const xAxisLabel = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      xAxisLabel.setAttribute("x", 150);
+      xAxisLabel.setAttribute("y", 145);
+      xAxisLabel.setAttribute("class", "axis-label");
+      xAxisLabel.textContent = "Year";
+      svg.appendChild(xAxisLabel);
+
+      document.getElementById("barPlot").appendChild(svg);
+    }
+
+    // Call createBarPlot after the page loads
+    window.addEventListener("load", createBarPlot);
+
+    // Initially show single mode and update recent list
+    switchMode('single');
+    updateRecentList();
+  </script>
+
+</body></html>

@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Analysis Results</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <h1>Analysis Results</h1>
+  <% if (analysis.error) { %>
+    <p>Error: <%= analysis.error %></p>
+  <% } else { %>
+    <p><strong>Recipe URL:</strong> <%= analysis.recipe_url %></p>
+    <p>
+      <strong>Overall Recipe is Plant Based:</strong>
+      <%= analysis.recipe_is_plant_based ? 'Yes' : 'No' %>
+    </p>
+    <h2>Ingredients:</h2>
+    <ul>
+      <% analysis.ingredients.forEach(item => { %>
+        <li>
+          <%= item.ingredient %> – Plant based: <%= item.is_plant_based ? 'Yes' : 'No' %>
+          (Prediction: <%= item.prediction %>)
+        </li>
+      <% }); %>
+    </ul>
+  <% } %>
+  <a href="/">Analyze another recipe</a>
+</body>
+</html>
