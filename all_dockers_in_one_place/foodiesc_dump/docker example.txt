@@ -1,0 +1,10 @@
+docker run --rm --network mongo-net -v /c/backup/foodiesc_dump/foodiesc:/dump mongo mongorestore --host mongodb_new --db foodiesc /dump
+
+
+On Mac:
+docker run -d --name mongodb_new \
+  -p 27018:27017 \
+  -v "$(pwd)/foodiesc:/dump" \
+  mongo
+
+docker exec -it mongodb_new mongorestore --db foodiesc /dump

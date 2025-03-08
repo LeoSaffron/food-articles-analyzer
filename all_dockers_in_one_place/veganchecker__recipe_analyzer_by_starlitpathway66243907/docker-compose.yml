@@ -1,0 +1,36 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: recipe-api
+    ports:
+      - "8000:8000"
+#    depends_on:
+#      - mongodb
+    environment:
+      - DB_HOST=localhost
+      - DB_PORT=27017
+      - DB_NAME=foodiesc
+      - COLLECTION_NAME=recipes_tasty_co
+    volumes:
+      - .:/app
+#    networks:
+#      - app-network
+
+#  mongodb:
+#    image: mongo:latest
+#    container_name: recipe-mongodb
+#    ports:
+#      - "27017:27017"
+#    volumes:
+#      - mongodb_data:/data/db
+#    networks:
+#      - app-network
+
+volumes:
+  mongodb_data:
+
+#networks:
+#  app-network:
+#    driver: bridge

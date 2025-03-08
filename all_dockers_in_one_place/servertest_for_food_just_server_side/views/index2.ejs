@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body {
+      background-color: #f9f9f9;
+    }
+  </style>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <h1>VeganChecker: Vegan Recipe Analyzer</h1>
+  <!-- Other content remains unchanged -->
+  <div class="input-container">
+    <input type="url" id="urlInput" placeholder="Enter recipe URL here">
+    <button id="analyzeButton" class="analyze-button">Analyze Recipe</button>
+  </div>
+  <div id="results"></div>
+
+  <!-- Include axios from CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/0.21.1/axios.min.js"></script>
+	<script>
+	  document.addEventListener('DOMContentLoaded', function() {
+		const urlInput = document.getElementById('urlInput');
+		const analyzeButton = document.getElementById('analyzeButton');
+		const resultsDiv = document.getElementById('results');
+
+		analyzeButton.addEventListener('click', async function() {
+		  const url = urlInput.value;
+		  if (!url) {
+			alert('Please enter a valid URL');
+			return;
+		  }
+		  resultsDiv.innerHTML = 'Analyzing recipe...';
+
+		  // Use URLSearchParams to create URL-encoded form data
+		  const params = new URLSearchParams();
+		  params.append('url', url);
+
+		  try {
+			// Send the POST request as application/x-www-form-urlencoded
+			const response = await axios.post('/analyze', params, {
+			  headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+			});
+			resultsDiv.innerHTML = response.data;
+		  } catch (error) {
+			console.error('Error analyzing recipe:', error);
+			resultsDiv.innerHTML = 'Error analyzing recipe. Please try again.';
+		  }
+		});
+	  });
+	</script>
+
+</body>
+</html>

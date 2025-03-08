@@ -1,0 +1,5 @@
+# Build the Docker image (you can replace "recipe-analyzer" with your preferred image name)
+docker build -t recipe-analyzer .
+
+# Run the Docker container, mapping port 8086 from the container to your host
+docker run -p 8086:8086 recipe-analyzer

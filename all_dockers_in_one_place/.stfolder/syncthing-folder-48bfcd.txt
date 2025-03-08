@@ -1,0 +1,5 @@
+# This directory is a Syncthing folder marker.
+# Do not delete.
+
+folderID: bicdq-zxuje
+created: 2025-03-04T17:51:21+02:00
