@@ -1,0 +1,4 @@
+docker build -t agent_recipe_plant_classification .
+docker run -d -p 8002:8002 --env-file .env agent_recipe_plant_classification
+
+curl "http://127.0.0.1:8002/check_recipe?url=https://tasty.co/recipe/homemade-cinnamon-rolls"
