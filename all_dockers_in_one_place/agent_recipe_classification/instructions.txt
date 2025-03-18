@@ -1,3 +1,5 @@
+docker pull python:3.9 # use for windows if encounter problem with python while building image
+
 docker build -t agent_recipe_plant_classification .
 docker run -d -p 8002:8002 --env-file .env agent_recipe_plant_classification
 
