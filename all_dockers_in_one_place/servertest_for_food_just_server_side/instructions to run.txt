@@ -1,3 +1,5 @@
 docker build -t servertest_for_food_just_server_side .
 
 docker run -d -p 3000:3000 servertest_for_food_just_server_side
+docker run -d -p 3000:3000 -e USE_NEW_AGENT=true servertest_for_food_just_server_side
+docker run -d -p 3000:3000 --env-file .env servertest_for_food_just_server_side
