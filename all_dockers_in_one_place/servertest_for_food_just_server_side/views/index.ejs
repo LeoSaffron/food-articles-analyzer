@@ -6,7 +6,7 @@
   }
 </style>
   <title>Your Page Title</title>-->
-  <!-- Link to the external CSS file --> 
+  <!-- Link to the external CSS file -->
   <link rel="stylesheet" href="styles.css">
 </head><body>
   <h1>VeganChecker: Vegan Recipe Analyzer</h1>
@@ -96,39 +96,35 @@
 
   <script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/axios/0.21.1/axios.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/0.21.1/axios.min.js"></script>
-  
-	<script>
-	  document.addEventListener('DOMContentLoaded', function() {
-		const urlInput = document.getElementById('urlInput');
-		const analyzeButton = document.getElementById('analyzeButton');
-		const resultsDiv = document.getElementById('results');
 
-		analyzeButton.addEventListener('click', async function() {
-		  const url = urlInput.value;
-		  if (!url) {
-			alert('Please enter a valid URL');
-			return;
-		  }
-		  resultsDiv.innerHTML = 'Analyzing recipe...';
+    <script>
+document.addEventListener('DOMContentLoaded', function() {
+  const urlInput = document.getElementById('urlInput');
+  const analyzeButton = document.getElementById('analyzeButton');
+  const resultsDiv = document.getElementById('results');
 
-		  // Use URLSearchParams to create URL-encoded form data
-		  const params = new URLSearchParams();
-		  params.append('url', url);
+  analyzeButton.addEventListener('click', async function() {
+    const url = urlInput.value;
+    if (!url) {
+      alert('Please enter a valid URL');
+      return;
+    }
+    resultsDiv.innerHTML = 'Analyzing recipe...';
 
-		  try {
-			// Send the POST request as application/x-www-form-urlencoded
-			const response = await axios.post('/analyze', params, {
-			  headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-			});
-			resultsDiv.innerHTML = response.data;
-		  } catch (error) {
-			console.error('Error analyzing recipe:', error);
-			resultsDiv.innerHTML = 'Error analyzing recipe. Please try again.';
-		  }
-		});
-	  });
-	</script>
-	
+    try {
+      const response = await axios.post('/analyze', new URLSearchParams({ url }), {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+      });
+      resultsDiv.innerHTML = `<pre>${JSON.stringify(response.data, null, 2)}</pre>`;
+    } catch (error) {
+      console.error('Error analyzing recipe:', error);
+      resultsDiv.innerHTML = 'Error analyzing recipe. Please try again.';
+    }
+  });
+});
+</script>
+
+
 	<script>
     const singleModeBtn = document.getElementById('singleModeBtn');
     const bulkModeBtn = document.getElementById('bulkModeBtn');
@@ -211,11 +207,11 @@
       let html = '<h2>Vegan Recipe Analysis</h2>';
       html += `<h3>${recipe.title}</h3>`;
       html += '<ul class="ingredient-list">';
-      
+
       recipe.ingredients.forEach(ing => {
         html += `<li class="ingredient-item vegan">${ing}</li>`;
       });
-      
+
       html += '</ul>';
 
       html += '<h4>Tags:</h4>';
@@ -249,7 +245,7 @@
 
     function displayBulkResults(recipes) {
       let html = '<h2>Bulk Vegan Recipe Analysis</h2>';
-      
+
       const filteredRecipes = recipes.filter(recipe => {
         return recipe.vegan && activeTags.every(tag => recipe.tags.includes(tag));
       });
@@ -264,7 +260,7 @@
           </div>`;
         });
       }
-      
+
       bulkResultsDiv.innerHTML = html;
     }
 
