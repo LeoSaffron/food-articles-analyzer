@@ -55,7 +55,8 @@ app.post('/analyze', async (req, res) => {
 
   try {
     // Backend should make the request, not the browser
-    const apiUrl = USE_NEW_AGENT ? NEW_AGENT_URL : OLD_BACKEND_URL;
+//    const apiUrl = USE_NEW_AGENT ? NEW_AGENT_URL : OLD_BACKEND_URL;
+    const apiUrl = NEW_AGENT_URL;
 
     console.log(`Proxying request to: ${apiUrl} for URL: ${recipeUrl}`);
 
