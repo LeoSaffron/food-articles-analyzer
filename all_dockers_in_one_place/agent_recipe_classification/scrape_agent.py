@@ -7,6 +7,7 @@ from unidecode import unidecode
 import re
 import os
 from urllib.parse import urlparse
+import hashlib
 
 def is_valid_url(user_input: str, verbose: int = 0, debug: bool = False) -> bool:
     def log(message, level=1):
@@ -109,8 +110,14 @@ def test_url_validation():
     print("\n✅ All URL validation tests passed.")
 
 
-def scrape_webpage(url, verbose=0, cache_file="cached_page.html"):
+def scrape_webpage(url, verbose=0, cache_dir="cache"):
     """Scrapes a webpage and extracts text content. Uses local cache if available."""
+    os.makedirs(cache_dir, exist_ok=True)
+
+    # Generate a unique filename based on the URL hash
+    url_hash = hashlib.md5(url.encode()).hexdigest()
+    cache_file = os.path.join(cache_dir, f"{url_hash}.html")
+
     if os.path.exists(cache_file):
         if verbose >= 1:
             print(f"[INFO] Using cached HTML from: {cache_file}")
