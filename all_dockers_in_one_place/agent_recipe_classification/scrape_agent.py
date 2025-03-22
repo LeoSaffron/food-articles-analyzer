@@ -30,6 +30,9 @@ def scrape_webpage(url, verbose=0, cache_file="cached_page.html"):
     soup = BeautifulSoup(html_content, "html.parser")
     raw_text = unidecode(soup.get_text(separator="\n", strip=True))
 
+    with open('cached_page2.html', "w", encoding="utf-8") as f:
+        f.write(raw_text)
+
     if verbose >= 1:
         print(f"[INFO] Extracted {len(raw_text)} characters from HTML")
 
@@ -52,33 +55,6 @@ def parse_quantity(quantity_text):
         quantity = None
 
     return quantity, unit
-
-import re
-import json
-
-import re
-import json
-
-import re
-import json
-
-import re
-import json
-
-import re
-import json
-
-import re
-import json
-
-import re
-import json
-
-import re
-import json
-
-import re
-import json
 
 import re
 import json
@@ -172,9 +148,9 @@ def parse_recipe_with_llm(raw_text, debug=False, verbose=0):
         "title": "Recipe Title",  # Use "title" instead of "name". Never return "recipe": {{}}
         "description": "Short description",
         "time": {{
-            "prep": "30 minutes",
-            "cook": "1 hour",
-            "total": "1 hour 30 minutes"
+            "prep": "30 minutes",   // always string, even if numeric
+            "cook": "string",  // always string, even if numeric
+            "total": "1 hour 30 minutes"  // always string, even if numeric
         }},
         "ingredients": [
             {{
@@ -187,27 +163,45 @@ def parse_recipe_with_llm(raw_text, debug=False, verbose=0):
         "instructions": ["Step 1", "Step 2"]
     }}
 
-    **IMPORTANT RULES**:
-    - **DO NOT** return `"recipe": {{}}`. Just return JSON directly.
-    - **DO NOT** use `"name"`. Use `"title"` instead.
-    - **Put every numerical values that contains text in "" (e.g. instead of 15 hours it should be "15 hours")**
-    - **DO NOT** add extra text like "Here is the extracted JSON".
-    - **Ensure `"quantity"` is separated from `"unit"`** (e.g., `"4 oz"` → `"quantity": 4, "unit": "oz"`).
-    - **If an ingredient has no `"quantity"` or `"unit"`, remove those keys.**
-    - **DO NOT** include Markdown formatting (` ```json ` or backticks).
-    - **If the title is missing, return `"title": "Unknown Recipe"` instead of an empty string.**
-    - **Return only valid JSON. No extra text, no code blocks, no explanations.**
-
     -----
     Recipe Text:
     {raw_text}
     -----
     """
 
+    if debug or verbose >= 2:
+        print("\n[DEBUG] Final prompt sent to LLM:\n")
+        print(prompt)
+
+    # response = ollama.chat(
+    #     model="llama3:8B",
+    #     messages=[{"role": "user", "content": prompt}],
+    #     options={"temperature": 0}  # Set model temperature to 0 for consistency
+    # )
     response = ollama.chat(
-        model="llama3",
-        messages=[{"role": "user", "content": prompt}],
-        options={"temperature": 0}  # Set model temperature to 0 for consistency
+        model="llama3:8B",  # Change to your exact model
+        messages=[
+            {
+                "role": "system",
+                "content": """
+                You are a structured data extraction assistant. Always return valid JSON.
+
+                **IMPORTANT RULES**:
+                - **DO NOT** return `"recipe": {}`. Just return JSON directly.
+                - **DO NOT** use `"name"`. Use `"title"` instead.
+                - **DO NOT** add extra text like "Here is the extracted JSON".
+                - **Ensure `"quantity"` is separated from `"unit"`** (e.g., `"4 oz"` → `"quantity": 4, "unit": "oz"`).
+                - **break down amounts when both numerical values and units of measurement are present** (e.g., `"prep_time" : "15 minutes"` → `"prep_time": {"value" : 15, "unit": "minutes"}`).
+                - **Put every numerical value that contains text in "" (e.g., instead of `15 hours`, return `"15 hours"`).**
+                - **If an ingredient has no `"quantity"` or `"unit"`, remove those keys.**
+                - **DO NOT** include Markdown formatting (` ```json ` or backticks).
+                - **If the title is missing, return `"title": "Unknown Recipe"` instead of an empty string.**
+                - **Return only valid JSON. No extra text, no code blocks, no explanations.**
+                """
+            },
+            {"role": "user", "content": prompt}  # Your actual query
+        ],
+        options={"temperature": 0}  # Keep deterministic
     )
 
     raw_output = response["message"]["content"].strip()
@@ -220,15 +214,32 @@ def parse_recipe_with_llm(raw_text, debug=False, verbose=0):
     if "title" not in structured_data or not structured_data["title"]:
         structured_data["title"] = "Unknown Recipe"  # Ensure title is always present
 
+    # if "ingredients" in structured_data:
+    #     for ingredient in structured_data["ingredients"]:
+    #         if "quantity" in ingredient:
+    #             quantity, unit = parse_quantity(ingredient["quantity"])
+    #             if quantity is not None:
+    #                 ingredient["quantity"] = quantity
+    #             if unit:
+    #                 ingredient["unit"] = unit
+    #             del ingredient["quantity"]
+    #
+    #         if "category" in ingredient and not ingredient["category"]:
+    #             del ingredient["category"]
+
     if "ingredients" in structured_data:
         for ingredient in structured_data["ingredients"]:
-            if "quantity" in ingredient:
-                quantity, unit = parse_quantity(ingredient["quantity"])
+            # Only parse if quantity is a standalone number + unit
+            q = ingredient.get("quantity")
+            if q and isinstance(q, str) and re.match(r"^[\d\s/\.]+[a-zA-Z%]*$", q.strip()):
+                quantity, unit = parse_quantity(q.strip())
                 if quantity is not None:
                     ingredient["quantity"] = quantity
                 if unit:
                     ingredient["unit"] = unit
-                del ingredient["quantity"]
+                # Only delete original quantity if it was converted
+                if quantity is not None or unit:
+                    del ingredient["quantity"]
 
             if "category" in ingredient and not ingredient["category"]:
                 del ingredient["category"]
