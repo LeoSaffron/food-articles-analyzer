@@ -101,16 +101,37 @@ def validate_ingredient(ingredient):
     response = requests.post(url, json=payload)
     return response.json()["response"].strip().lower() == "yes"
 
-
 # 🔹 Extract a clean list of valid ingredients
 def extract_ingredients(recipe):
-    raw_ingredients = [ing[1] for ing in recipe.get("ingredients", [])]
+    def extract_name_only(item):
+        if isinstance(item, dict):
+            # Prefer structured 'name' field
+            return item.get("name", "").strip()
 
-    # Apply regex-based filtering first
-    potential_ingredients = [ing for ing in raw_ingredients if is_potential_ingredient(ing)]
+        elif isinstance(item, list):
+            # Heuristic: assume the last element is the name (e.g., ["2 cups", "flour"])
+            return str(item[-1]).strip() if item else None
 
-    # Apply LLM-based validation
-    return [ing for ing in potential_ingredients if validate_ingredient(ing)]
+        elif isinstance(item, str):
+            return item.strip()
+
+        return None
+
+    raw_items = recipe.get("ingredients", [])
+    extracted = [extract_name_only(i) for i in raw_items if extract_name_only(i)]
+
+    # Basic cleanup — skip empty or junk strings
+    return [ing for ing in extracted if is_potential_ingredient(ing)]
+
+# 🔹 Extract a clean list of valid ingredients
+# def extract_ingredients(recipe):
+#     raw_ingredients = [ing[1] for ing in recipe.get("ingredients", [])]
+#
+#     # Apply regex-based filtering first
+#     potential_ingredients = [ing for ing in raw_ingredients if is_potential_ingredient(ing)]
+#
+#     # Apply LLM-based validation
+#     return [ing for ing in potential_ingredients if validate_ingredient(ing)]
 
 
 # 🔹 Query self-hosted Llama 3 (via Ollama) for ingredient classification
