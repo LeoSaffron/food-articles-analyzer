@@ -10,6 +10,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi import FastAPI, Request
 
+from scrape_agent import RecipeScraper, is_valid_recipe
+
 # 🔹 Load environment variables from .env file
 load_dotenv()
 
@@ -25,6 +27,9 @@ client = MongoClient(MONGO_URI)
 db = client[MONGO_DB]
 collection = db[MONGO_COLLECTION]
 misclassified_collection = db["misclassified_ingredients"]
+
+# 🔹 Enable logging to console
+logging.basicConfig(level=logging.INFO)
 
 # 🔹 Initialize FastAPI
 app = FastAPI()
@@ -182,25 +187,49 @@ def query_llm(ingredient):
 
 
 # 🔹 Check if a recipe is plant-based
-def check_recipe(url):
+def check_recipe(url, debug=True):
     recipe = get_recipe_by_url(url)
-    if not recipe:
-        return {"error": "Recipe not found"}
 
-    ingredients = extract_ingredients(recipe)  # Only valid ingredients
+    if not recipe:
+        logging.info(f"[INFO] Recipe not found in database: {url}")
+        print(f"[INFO] Recipe not found in database: {url}")
+
+        logging.info(f"[INFO] Scraping recipe from URL: {url}")
+        print(f"[INFO] Scraping recipe from URL: {url}")
+
+        # scraper = RecipeScraper(url)
+        # scraped_recipe = scraper.get_recipe(url)
+        scraper = RecipeScraper(url, mongo_uri=MONGO_URI, debug=debug, verbose=2 if debug else 0)
+        scraped_recipe = scraper.get_recipe(url, debug=debug, verbose=2 if debug else 0)
+
+        if is_valid_recipe(scraped_recipe):
+            logging.info("[INFO] Scraped recipe is valid, saving to MongoDB")
+            scraper.save_to_mongodb(scraped_recipe)
+            recipe = scraped_recipe
+        else:
+            logging.warning("[WARN] Scraped recipe is invalid:")
+            logging.warning(scraped_recipe)  # ← This will print the failed payload
+            return {"error": "Recipe not found and could not be scraped."}
+
+    else:
+        logging.info(f"[INFO] Recipe found in database for URL: {url}")
+        print(f"[INFO] Recipe found in database for URL: {url}")
+
+    ingredients = extract_ingredients(recipe)
     plant_based_results = {ing: query_llm(ing) for ing in ingredients}
 
-    # A recipe is plant-based if all ingredients are either "Always Plant-Based", "Usually Plant-Based", or "Check for Vegan Version"
-    all_plant_based = all(result in ["Always Plant-Based", "Usually Plant-Based", "Check for Vegan Version"]
-                          for result in plant_based_results.values())
+    all_plant_based = all(result in [
+        "Always Plant-Based",
+        "Usually Plant-Based",
+        "Check for Vegan Version"
+    ] for result in plant_based_results.values())
 
     return {
-        "title": recipe["title"],
-        "url": recipe["url_recipe"],
+        "title": recipe.get("title", "Unknown Recipe"),
+        "url": recipe.get("url_recipe", url),
         "plant_based": all_plant_based,
         "ingredient_results": plant_based_results
     }
-
 
 # 🔹 API Endpoint: Check if a recipe is plant-based
 @app.get("/check_recipe")

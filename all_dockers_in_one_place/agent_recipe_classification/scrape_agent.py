@@ -186,6 +186,7 @@ class RecipeScraper:
 
     def extract_json_from_text(self, text, verbose=0):
         """Extracts valid JSON from LLM output while ensuring correctness."""
+        import re
         try:
             # Locate first valid JSON object
             first_brace = text.find("{")
@@ -209,13 +210,13 @@ class RecipeScraper:
             #     json_text
             # )
 
-            # Fix unquoted string values like 30 minutes, 22g, etc.
-            json_text = re.sub(
-                r'(:\s*)(?!true|false|null)(?!["\[{])([^\s",\[\]{}][^,\n{}\[\]]*)',
-                lambda m: f'{m.group(1)}"{m.group(2).strip()}"'
-                if not re.fullmatch(r'[\d.]+', m.group(2).strip()) else m.group(0),
-                json_text
-            )
+            # # Fix unquoted string values like 30 minutes, 22g, etc.
+            # json_text = re.sub(
+            #     r'(:\s*)(?!true|false|null)(?!["\[{])([^\s",\[\]{}][^,\n{}\[\]]*)',
+            #     lambda m: f'{m.group(1)}"{m.group(2).strip()}"'
+            #     if not re.fullmatch(r'[\d.]+', m.group(2).strip()) else m.group(0),
+            #     json_text
+            # )
 
             # Fix improperly formatted JSON keys
             json_text = re.sub(r'\\?"([a-zA-Z0-9_-]+)\\?"\s*:', r'"\1":', json_text)
@@ -233,6 +234,111 @@ class RecipeScraper:
 
             # **Split JSON into lines for debugging**
             lines = json_text.splitlines()
+
+            # Fix unescaped quotes inside strings like instructions or descriptions
+            # Match strings (e.g. "some text") and fix quotes inside
+            def escape_inner_quotes_in_strings(text):
+                def replace_invalid_quotes(match):
+                    full_string = match.group(0)
+                    inner = full_string[1:-1]
+
+                    # Replace unescaped inner quotes, but avoid touching already escaped ones
+                    inner_fixed = re.sub(r'(?<!\\)"', r'\\"', inner)
+                    return f'"{inner_fixed}"'
+
+                # This matches JSON strings more reliably (supports newlines too)
+                pattern = r'"([^"\\]*(?:\\.[^"\\]*)*)"'
+                return re.sub(pattern, replace_invalid_quotes, text, flags=re.DOTALL)
+
+            import re
+
+            import re
+
+            def escape_inner_quotes_only_in_values(json_text):
+                """
+                Escapes unescaped quotes only inside string *values* (not keys).
+                Assumes string values are enclosed in double quotes and appear after a colon.
+                """
+
+                def fix_value(match):
+                    key = match.group(1)
+                    raw_value = match.group(2)
+
+                    # Don't touch already escaped quotes
+                    escaped_value = re.sub(r'(?<!\\)"', r'\\"', raw_value)
+                    return f'"{key}": "{escaped_value}"'
+
+                # Match: "key": "some text with "inner quotes""
+                pattern = r'"([^"]+)":\s*"([^"]*?\"[^"]*?)"'
+                return re.sub(pattern, fix_value, json_text)
+
+            def fix_inner_quotes_in_lists(text):
+                """
+                Fix unescaped inner quotes inside list of strings (e.g., inside 'instructions').
+                It scans the whole JSON-like string and escapes quote characters that appear unescaped within a value.
+                """
+
+                def fix_line_quotes(match):
+                    line = match.group(1)
+                    fixed = re.sub(r'(?<!\\)"', r'\\"', line)
+                    return f'"{fixed}"'
+
+                # This pattern captures list elements like "some text" that may contain unescaped quotes inside
+                pattern = r'\"([^\"]*?\"[^\"]*?)\"'
+                return re.sub(pattern, fix_line_quotes, text)
+
+            def fix_unescaped_inner_quotes(json_text):
+                result = []
+                in_string = False
+                escaped = False
+
+                for i, char in enumerate(json_text):
+                    if char == '"' and not escaped:
+                        in_string = not in_string
+                        result.append(char)
+                    elif char == '"' and in_string and not escaped:
+                        # unescaped quote inside string → escape it
+                        result.append('\\"')
+                    else:
+                        result.append(char)
+
+                    escaped = (char == '\\' and not escaped)
+
+                return ''.join(result)
+
+            import re
+
+            def fix_unescaped_quotes_in_string_lists(text):
+                """
+                Looks for JSON lists of strings (like instructions) and escapes unescaped inner quotes inside each item.
+                This avoids breaking the outer JSON structure.
+                """
+
+                def fix_item_quotes(item):
+                    # Remove the surrounding quotes, escape inner quotes, re-wrap
+                    content = item[1:-1]
+                    fixed = re.sub(r'(?<!\\)"', r'\\"', content)
+                    return f'"{fixed}"'
+
+                def fix_list(match):
+                    list_content = match.group(1)
+                    # Match individual quoted items
+                    items = re.findall(r'"[^"]*(?:"[^"]*)*"', list_content)
+                    fixed_items = [fix_item_quotes(i) for i in items]
+                    return "[\n" + ",\n".join(fixed_items) + "\n]"
+
+                # This matches something like: "instructions": [ ... ]
+                return re.sub(r'\[\s*((?:.|\n)*?)\s*\]', fix_list, text)
+
+            # json_text = escape_inner_quotes_in_strings(json_text)
+            # json_text = escape_inner_quotes_structurally(json_text)
+            # json_text = fix_inner_quotes_in_lists(json_text)
+            # json_text = escape_inner_quotes_only_in_values(json_text)
+            # after fixing commas, etc.
+            # json_text = fix_unescaped_inner_quotes(json_text)
+            # json_text = fix_unescaped_quotes_in_string_lists(json_text)
+
+            print(json_text)
 
             # Try parsing and capture exact failing line
             try:
@@ -398,6 +504,9 @@ class RecipeScraper:
                     return structured json.
                     Do not change any data, just the structure.
                     **DO NOT use `...` or ellipsis — always return full lists (e.g., all steps and ingredients).**
+                    make sure the output is 100% compatible with json syntax
+                    do not add quotation marks inside of a quotation
+                    do not break the json syntax
                     """
                 },
                 {"role": "user", "content": prompt}  # Your actual query
@@ -462,20 +571,20 @@ class RecipeScraper:
         return structured_recipe
 
     def save_to_mongodb(self, recipe_data):
-        if "url" not in recipe_data:
+        if "url_recipe" not in recipe_data:
             print("[ERROR] Recipe data must contain a 'url' field to save.")
             return
 
         try:
             result = self.collection.update_one(
-                {"url": recipe_data["url"]},  # Use URL as unique key
+                {"url_recipe": recipe_data["url_recipe"]},  # Use URL as unique key
                 {"$set": recipe_data},
                 upsert=True
             )
             if result.matched_count > 0:
-                print(f"[INFO] Recipe updated in MongoDB: {recipe_data['url']}")
+                print(f"[INFO] Recipe updated in MongoDB: {recipe_data['url_recipe']}")
             else:
-                print(f"[INFO] Recipe inserted into MongoDB: {recipe_data['url']}")
+                print(f"[INFO] Recipe inserted into MongoDB: {recipe_data['url_recipe']}")
         except Exception as e:
             print(f"[ERROR] Failed to save recipe to MongoDB: {e}")
 
