@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi import FastAPI, Request
+from html import unescape
 
 from scrape_agent import RecipeScraper, is_valid_recipe
 
@@ -107,26 +108,104 @@ def validate_ingredient(ingredient):
     return response.json()["response"].strip().lower() == "yes"
 
 # 🔹 Extract a clean list of valid ingredients
+# def extract_ingredients(recipe):
+#     def extract_name_only(item):
+#         if isinstance(item, dict):
+#             # Prefer structured 'name' field
+#             return item.get("name", "").strip()
+#
+#         elif isinstance(item, list):
+#             # Heuristic: assume the last element is the name (e.g., ["2 cups", "flour"])
+#             return str(item[-1]).strip() if item else None
+#
+#         elif isinstance(item, str):
+#             return item.strip()
+#
+#         return None
+#
+#     raw_items = recipe.get("ingredients", [])
+#     extracted = [extract_name_only(i) for i in raw_items if extract_name_only(i)]
+#
+#     # Basic cleanup — skip empty or junk strings
+#     return [ing for ing in extracted if is_potential_ingredient(ing)]
+
 def extract_ingredients(recipe):
-    def extract_name_only(item):
-        if isinstance(item, dict):
-            # Prefer structured 'name' field
-            return item.get("name", "").strip()
+    def flatten(items):
+        for i in items:
+            if isinstance(i, list):
+                yield from flatten(i)
+            else:
+                yield i
 
-        elif isinstance(item, list):
-            # Heuristic: assume the last element is the name (e.g., ["2 cups", "flour"])
-            return str(item[-1]).strip() if item else None
+    def clean_html(text):
+        text = re.sub(r"<[^>]+>", "", text)  # Remove HTML tags
+        return unescape(text.strip())  # Decode HTML entities
 
-        elif isinstance(item, str):
-            return item.strip()
+    def extract_from_string(line):
+        if not isinstance(line, str):
+            return None
+        line = clean_html(line)
+        if not is_potential_ingredient(line):
+            return None
+        # Remove units/quantities and notes
+        line = re.sub(r"^[\d¼½¾¾\s/.,ozcupsingteabltablespoons]+", "", line, flags=re.IGNORECASE)
+        line = re.sub(r"\([^)]*\)", "", line)  # Remove anything in brackets
+        line = re.sub(r"[,–-].*$", "", line)  # Remove descriptors after comma/dash
+        return line.strip()
 
+    def extract_from_list(lst):
+        if all(isinstance(i, str) for i in lst):
+            # Join list into a sentence, strip html, extract
+            combined = " ".join(lst)
+            return [extract_from_string(combined)]
+        else:
+            # Nested structure like sub-ingredients
+            return [process_ingredient_item(item) for item in lst]
+
+    def extract_name(item):
+        if not isinstance(item, dict):
+            return None
+        for key in ["ingredient_name", "name"]:
+            val = item.get(key)
+            if val and is_potential_ingredient(val):
+                return clean_html(val)
         return None
 
-    raw_items = recipe.get("ingredients", [])
-    extracted = [extract_name_only(i) for i in raw_items if extract_name_only(i)]
+    def process_ingredient_item(item):
+        if isinstance(item, str):
+            return [extract_from_string(item)]
+        elif isinstance(item, list):
+            return extract_from_list(item)
+        elif isinstance(item, dict):
+            if "sub-ingredients" in item:
+                return [process_ingredient_item(sub) for sub in item["sub-ingredients"]]
+            name = extract_name(item)
+            return [name] if name else []
+        return []
 
-    # Basic cleanup — skip empty or junk strings
-    return [ing for ing in extracted if is_potential_ingredient(ing)]
+    # Source priority
+    raw_items = (
+        recipe.get("ingredients") or
+        recipe.get("recipeIngredient") or
+        []
+    )
+
+    nested = [process_ingredient_item(item) for item in raw_items]
+    flat = list(flatten(nested))
+    cleaned = [i for i in flat if i and is_potential_ingredient(i)]
+    return list(dict.fromkeys(cleaned))  # remove duplicates while preserving order
+
+# Simple filter for valid ingredient names
+def is_potential_ingredient(text):
+    if not text:
+        return False
+    text = text.strip().lower()
+    banned = {
+        "toppings", "frosting", "stuffings",
+        "dough base", "batter", "glaze", "optional"
+    }
+    return not any(text == b for b in banned) and len(text) > 2
+
 
 # 🔹 Extract a clean list of valid ingredients
 # def extract_ingredients(recipe):
