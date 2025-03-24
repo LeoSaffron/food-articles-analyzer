@@ -8,7 +8,7 @@ WORKDIR /app
 COPY . /app
 
 # Install any necessary dependencies
-RUN pip install --no-cache-dir fastapi pymongo requests uvicorn python-dotenv
+RUN pip install --no-cache-dir fastapi pymongo requests uvicorn python-dotenv beautifulsoup4 ollama unidecode
 
 
 # Expose the port FastAPI runs on
