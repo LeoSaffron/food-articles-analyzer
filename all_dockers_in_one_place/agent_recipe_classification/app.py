@@ -432,13 +432,33 @@ from fastapi.responses import StreamingResponse
 @app.get("/check_recipe_stream")
 def check_recipe_stream(url: str):
     def event_stream():
+        yield_msgs = []
+        def log_callback(msg):
+            yield_msgs.append(msg)
+            yield msg  # Optional if you want immediate flush too
         yield f"[INFO] Checking recipe URL: {url}\n"
         recipe = get_recipe_by_url(url)
 
         if not recipe:
             yield "[INFO] Recipe not found in DB, scraping...\n"
+            # scraper = RecipeScraper(url, mongo_uri=MONGO_URI, debug=True, verbose=2)
+            # for msg in scraper.get_recipe(url, debug=True, verbose=2, log_callback=log_callback):
+            #     yield msg + "\n"
+            # # recipe = scraper.get_recipe(url)
+            #
+            # log_buffer = []
+            #
+            # def log_cb(msg):
+            #     log_buffer.append(msg)
+
             scraper = RecipeScraper(url, mongo_uri=MONGO_URI, debug=True, verbose=2)
-            recipe = scraper.get_recipe(url)
+            yield from scraper.get_recipe(url, debug=True, verbose=2, log_callback=log_callback)
+            recipe = scraper.result_get_recipe
+
+            # for msg in log_buffer:
+            #     yield f"{msg}\n"
+
+
             if not is_valid_recipe(recipe):
                 yield "[ERROR] Invalid recipe, aborting.\n"
                 return

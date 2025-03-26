@@ -13,6 +13,9 @@ import json
 from pymongo import MongoClient, UpdateOne
 from playwright.sync_api import sync_playwright
 from dotenv import load_dotenv
+import logging
+from fastapi.responses import StreamingResponse  # make sure this is imported
+
 
 class RecipeScraper:
     def __init__(self, url, model="llama3:8B", cache_dir="cache",
@@ -29,7 +32,11 @@ class RecipeScraper:
         self.verbose = verbose
         self.debug = debug
         self.LLM_API_URL = os.getenv("LLM_API_URL", "http://localhost:11434")
-        self.LLM_API_URL="http://host.docker.internal:11434/api/chat"
+        self.LLM_API_URL = "http://host.docker.internal:11434/api/chat"
+        self.result_initial_parse_with_llm = None
+        self.result_llm_split_amount_units = None
+        self.result_parse_recipe_with_llm = None
+        self.result_get_recipe = None
 
     @staticmethod
     def is_valid_url(user_input: str, verbose: int = 0, debug: bool = False) -> bool:
@@ -220,7 +227,7 @@ class RecipeScraper:
             if first_brace == -1 or last_brace == -1:
                 raise ValueError("No valid JSON found in LLM output")
 
-            json_text = text[first_brace:last_brace+1]
+            json_text = text[first_brace:last_brace + 1]
 
             # Fix common issues like trailing commas
             json_text = re.sub(r",\s*}", "}", json_text)
@@ -397,7 +404,7 @@ class RecipeScraper:
         """Sends raw recipe text to LLM and ensures a valid JSON response."""
         prompt = f"""
         Extract structured data from the following recipe text.
-    
+
         Return JSON formatted like this, with NO extra text before or after:
         {{
             "title": "Recipe Title",  # Use "title" instead of "name". Never return "recipe": {{}}
@@ -419,7 +426,7 @@ class RecipeScraper:
             "instructions": ["Step 1", "Step 2"]
         }}
         in case an ingredient has more than one measurement unit (e.g. 1 cup or 200g of water) save both of them
-    
+
         -----
         Recipe Text:
         {raw_text}
@@ -513,7 +520,8 @@ class RecipeScraper:
 
         if debug or verbose >= 2:
             print("\n[DEBUG] Raw LLM Output of the Initial parse:\n", raw_output)
-        return raw_output
+        self.result_initial_parse_with_llm = raw_output
+        # return raw_output
 
     def llm_split_amount_units(self, raw_text, debug=False, verbose=0):
         """Sends raw recipe text to LLM and ensures a valid JSON response."""
@@ -534,7 +542,7 @@ class RecipeScraper:
             "quantity": {{"value": 0.75, "unit": "cup", alternativeUnits:[{{"value": 165, "unit": "6"}}]}}
         }}
         '''
-        
+
         example 3:
         '''
         {{
@@ -584,7 +592,6 @@ class RecipeScraper:
         #     base_url=self.LLM_API_URL
         # )
 
-
         payload = {
             "model": "meta-llama-3-8b-instruct",
             "messages": [
@@ -598,6 +605,7 @@ class RecipeScraper:
                     make sure the output is 100% compatible with json syntax
                     do not add quotation marks inside of a quotation
                     do not break the json syntax
+                    make sure to put any string value in quotation mark to comply with json syntax
                     """
                 },
                 {
@@ -618,11 +626,24 @@ class RecipeScraper:
 
         if debug or verbose >= 2:
             print("\n[DEBUG] Raw LLM Output after parsing amounts:\n", raw_output)
-        return raw_output
+        self.result_llm_split_amount_units = raw_output
+        # return raw_output
 
-    def parse_recipe_with_llm(self, raw_text, debug=False, verbose=0):
-        raw_output_initial = self.initial_parse_with_llm(raw_text, debug=debug, verbose=verbose)
-        raw_output = self.llm_split_amount_units(raw_output_initial, debug=debug, verbose=verbose)
+    def parse_recipe_with_llm(self, raw_text, debug=False, verbose=0, log_callback=None):
+        def log(msg):
+            if log_callback:
+                log_callback(msg)
+            if verbose:
+                print(msg)
+            # yield msg
+        yield('initial parse of the page\n')
+        # yield from self.initial_parse_with_llm(raw_text, debug=debug, verbose=verbose)
+        self.initial_parse_with_llm(raw_text, debug=debug, verbose=verbose)
+        raw_output_initial = self.result_initial_parse_with_llm
+        yield('formatting\n')
+        # yield from self.llm_split_amount_units(raw_output_initial, debug=debug, verbose=verbose)
+        self.llm_split_amount_units(raw_output_initial, debug=debug, verbose=verbose)
+        raw_output = self.result_llm_split_amount_units
 
         structured_data = self.extract_json_from_text(raw_output, verbose=2)
 
@@ -648,19 +669,33 @@ class RecipeScraper:
 
         if verbose >= 1:
             print("[INFO] Successfully parsed recipe data.")
+        log("[INFO] Successfully parsed recipe data.\n")
 
-        return structured_data
+        self.result_parse_recipe_with_llm = structured_data
 
-    def get_recipe(self, url, debug=False, verbose=0):
+        # return structured_data
+
+    def get_recipe(self, url, debug=False, verbose=0, log_callback=None):
         """Scrapes a recipe webpage and extracts structured data using LLM."""
+        def log(msg):
+            if log_callback:
+                log_callback(msg)
+            if verbose:
+                print(msg)
+            # yield msg
+
         if not self.is_valid_url(url, verbose=verbose, debug=debug):
-            return {"error": "Invalid or potentially unsafe URL."}
+            error_invalid_or_unsafe_url = "Invalid or potentially unsafe URL."
+            log(error_invalid_or_unsafe_url)
+            return {"error": error_invalid_or_unsafe_url}
 
         raw_text, error = self.scrape_webpage(url, verbose)
         if error:
+            log(error)
             return {"error": error}
 
-        structured_recipe = self.parse_recipe_with_llm(raw_text, debug, verbose)
+        yield from self.parse_recipe_with_llm(raw_text, debug, verbose, log_callback=log_callback)
+        structured_recipe = self.result_parse_recipe_with_llm
         # structured_recipe["source"] = url  # Add source URL
         # Move 'url' to be the first key in the resulting dict
         structured_recipe = {
@@ -668,7 +703,9 @@ class RecipeScraper:
             **structured_recipe
         }
 
-        return structured_recipe
+        self.result_get_recipe = structured_recipe
+
+        # return structured_recipe
 
     def save_to_mongodb(self, recipe_data):
         if "url_recipe" not in recipe_data:
@@ -688,15 +725,17 @@ class RecipeScraper:
         except Exception as e:
             print(f"[ERROR] Failed to save recipe to MongoDB: {e}")
 
+
 def is_valid_recipe(recipe_data):
     return (
-        isinstance(recipe_data, dict)
-        and "error" not in recipe_data
-        and "title" in recipe_data and recipe_data["title"].strip()
-        and "ingredients" in recipe_data and isinstance(recipe_data["ingredients"], list) and recipe_data["ingredients"]
-        and "instructions" in recipe_data and isinstance(recipe_data["instructions"], list) and recipe_data["instructions"]
+            isinstance(recipe_data, dict)
+            and "error" not in recipe_data
+            and "title" in recipe_data and recipe_data["title"].strip()
+            and "ingredients" in recipe_data and isinstance(recipe_data["ingredients"], list) and recipe_data[
+                "ingredients"]
+            and "instructions" in recipe_data and isinstance(recipe_data["instructions"], list) and recipe_data[
+                "instructions"]
     )
-
 
 
 if __name__ == "__main__":
@@ -707,7 +746,8 @@ if __name__ == "__main__":
     parser.add_argument("--mongo-db", type=str, default="foodiesc", help="MongoDB database name")
     parser.add_argument("--mongo-collection", type=str, default="recipes_tasty_co", help="MongoDB collection name")
     parser.add_argument("--debug", action="store_true", help="Enable debug mode (shows raw LLM output)")
-    parser.add_argument("--verbose", type=int, choices=[0, 1, 2], default=0, help="Verbosity level (0: default, 1: info, 2: detailed)")
+    parser.add_argument("--verbose", type=int, choices=[0, 1, 2], default=0,
+                        help="Verbosity level (0: default, 1: info, 2: detailed)")
 
     args = parser.parse_args()
     scraper = RecipeScraper(args.url, model="meta-llama-3-8b-instruct", cache_dir="cache", verbose=0, debug=False)
