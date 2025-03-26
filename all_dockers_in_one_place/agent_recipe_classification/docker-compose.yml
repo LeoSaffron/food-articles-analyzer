@@ -1,0 +1,8 @@
+services:
+  fastapi:
+    build: .
+    volumes:
+      - .:/app  # mounts your code live into the container
+    command: uvicorn app:app --host 0.0.0.0 --port 8002 --env-file .env --reload
+    ports:
+      - "8002:8002"

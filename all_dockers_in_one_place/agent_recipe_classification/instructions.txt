@@ -3,4 +3,6 @@ docker pull python:3.9 # use for windows if encounter problem with python while 
 docker build -t agent_recipe_plant_classification .
 docker run -d -p 8002:8002 --env-file .env agent_recipe_plant_classification
 
+docker-compose up --build -d
+
 curl "http://127.0.0.1:8002/check_recipe?url=https://tasty.co/recipe/homemade-cinnamon-rolls"
