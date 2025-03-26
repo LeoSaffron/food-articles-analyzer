@@ -42,6 +42,7 @@
 			<input type="url" id="urlInput" placeholder="Enter recipe URL here">
 			<button id="analyzeButton" class="analyze-button">Analyze Recipe</button>
 		  </div>
+        <div id="logOutput" style="white-space: pre-wrap; background: #eee; padding: 10px; margin-top: 10px;"></div>
         <div id="results"></div>
       </div>
 
@@ -102,7 +103,7 @@ document.addEventListener('DOMContentLoaded', function() {
   const urlInput = document.getElementById('urlInput');
   const analyzeButton = document.getElementById('analyzeButton');
   const resultsDiv = document.getElementById('results');
-
+/*
   analyzeButton.addEventListener('click', async function() {
     const url = urlInput.value;
     if (!url) {
@@ -110,6 +111,9 @@ document.addEventListener('DOMContentLoaded', function() {
       return;
     }
     resultsDiv.innerHTML = 'Analyzing recipe...';
+    streamLogs(url);
+
+    await fetchResult(url);      // fetch result after logs finish
 
     try {
       const response = await axios.post('/analyze', new URLSearchParams({ url }), {
@@ -120,9 +124,136 @@ document.addEventListener('DOMContentLoaded', function() {
       console.error('Error analyzing recipe:', error);
       resultsDiv.innerHTML = 'Error analyzing recipe. Please try again.';
     }
-  });
+  });*/
+//   analyzeButton.addEventListener('click', async () => {
+//   const url = urlInput.value;
+//   if (!url) return alert("Enter a valid URL");
+//
+//   const resultsDiv = document.getElementById("results");
+//   resultsDiv.textContent = "Starting log stream...\n";
+//
+//   // Stream logs first
+//   const response = await fetch(`/check_recipe_stream?url=${encodeURIComponent(url)}`);
+//   const reader = response.body.getReader();
+//   const decoder = new TextDecoder();
+//   while (true) {
+//     const { done, value } = await reader.read();
+//     if (done) break;
+//     const chunk = decoder.decode(value);
+//     resultsDiv.textContent += chunk;
+//   }
+//
+//   // Then get final result JSON
+//   const resultRes = await fetch(`/check_recipe_result?url=${encodeURIComponent(url)}`);
+//   const resultData = await resultRes.json();
+//   resultsDiv.textContent += `\n\n--- Final Result ---\n${JSON.stringify(resultData, null, 2)}`;
+// });
+analyzeButton.addEventListener('click', async function () {
+  const url = urlInput.value;
+  if (!url) {
+    alert('Please enter a valid URL');
+    return;
+  }
+
+//   analyzeRecipe(url); // Call the new combo function
+  analyzeWithStreaming(url);
+});
+
+
 });
 </script>
+
+<script>
+    /*
+// Stream logs to div
+async function streamLogs(url) {
+  const response = await fetch(`/check_recipe_stream?url=${encodeURIComponent(url)}`);
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let fullText = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const chunk = decoder.decode(value);
+    fullText += chunk;
+    document.getElementById("results").innerText = fullText;
+  }
+}
+
+// After logs are done, fetch final JSON
+async function fetchResult(url) {
+  const response = await fetch(`/check_recipe_result?url=${encodeURIComponent(url)}`);
+  const data = await response.json();
+  console.log("Final result:", data);
+  // Display however you want
+}
+*/
+    </script>
+<script>
+// async function analyzeRecipe(url) {
+//   const logResponse = await fetch(`/check_recipe_stream?url=${encodeURIComponent(url)}`);
+//   const reader = logResponse.body.getReader();
+//   const decoder = new TextDecoder();
+//   const resultsDiv = document.getElementById("results");
+//   let fullText = '';
+//
+//   resultsDiv.innerHTML = '<pre><strong>Starting log stream...</strong>\n</pre>';
+//
+//   while (true) {
+//     const { done, value } = await reader.read();
+//     if (done) break;
+//     const chunk = decoder.decode(value);
+//     fullText += chunk;
+//     resultsDiv.innerHTML = `<pre>${fullText}</pre>`;
+//   }
+//
+//   // ✅ Logs finished — now get the final result
+//   try {
+//     const finalResponse = await fetch(`/check_recipe_result?url=${encodeURIComponent(url)}`);
+//     const data = await finalResponse.json();
+//
+//     resultsDiv.innerHTML += `<hr><pre><strong>Final Result:</strong>\n${JSON.stringify(data, null, 2)}</pre>`;
+//   } catch (err) {
+//     resultsDiv.innerHTML += `<hr><strong>Error fetching final result</strong>`;
+//     console.error("Error fetching result:", err);
+//   }
+// }
+</script>
+
+<script>
+async function analyzeWithStreaming(url) {
+  const logDiv = document.getElementById("logOutput");
+  const resultsDiv = document.getElementById("results");
+
+  logDiv.innerText = "Starting log stream...\n";
+
+  try {
+    // Start log stream
+    const logResponse = await fetch(`/check_recipe_stream?url=${encodeURIComponent(url)}`);
+    const reader = logResponse.body.getReader();
+    const decoder = new TextDecoder();
+    let logText = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = decoder.decode(value);
+      logText += chunk;
+      logDiv.innerText = logText;
+    }
+
+    // ✅ Now fetch final result using the same URL!
+    const resultResponse = await fetch(`/check_recipe_result?url=${encodeURIComponent(url)}`);
+    const resultData = await resultResponse.json();
+    resultsDiv.innerHTML = `<pre>${JSON.stringify(resultData, null, 2)}</pre>`;
+  } catch (err) {
+    resultsDiv.innerText = "Error fetching final result";
+    console.error("Error fetching result:", err);
+  }
+}
+</script>
+
+
 
 
 	<script>

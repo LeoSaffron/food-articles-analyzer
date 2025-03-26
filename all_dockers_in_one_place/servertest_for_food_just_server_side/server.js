@@ -46,6 +46,8 @@ const USE_NEW_AGENT = process.env.USE_NEW_AGENT === 'true';
 const NEW_AGENT_URL = "http://host.docker.internal:8002/check_recipe";
 const OLD_BACKEND_URL = "http://host.docker.internal:8086/analyze";
 
+const { createProxyMiddleware } = require('http-proxy-middleware');
+
 // Form submission: Call either the new agent or the old backend
 app.post('/analyze', async (req, res) => {
   const recipeUrl = req.body.url;
@@ -67,6 +69,51 @@ app.post('/analyze', async (req, res) => {
     res.status(500).send("Error contacting API: " + err.message);
   }
 });
+
+app.use('/stream_logs', createProxyMiddleware({
+  target: 'http://host.docker.internal:8002',
+  changeOrigin: true,
+  ws: true,
+}));
+
+//const { createProxyMiddleware } = require('http-proxy-middleware');
+
+app.get('/check_recipe_stream', async (req, res) => {
+  const url = req.query.url;
+  if (!url) {
+    return res.status(400).send("Missing recipe URL");
+  }
+
+  try {
+    const streamResponse = await axios.get("http://host.docker.internal:8002/check_recipe_stream", {
+      params: { url },
+      responseType: 'stream'
+    });
+
+    // Pipe FastAPI stream back to browser
+    res.setHeader('Content-Type', 'text/plain');
+    streamResponse.data.pipe(res);
+  } catch (err) {
+    console.error("Error proxying stream:", err);
+    res.status(500).send("Stream failed: " + err.message);
+  }
+});
+
+// Proxy the result route to FastAPI backend
+app.get('/check_recipe_result', async (req, res) => {
+  try {
+    const url = req.query.url;
+    const response = await axios.get(`http://host.docker.internal:8002/check_recipe_result`, {
+      params: { url }
+    });
+    res.json(response.data);
+  } catch (error) {
+    console.error("Error fetching result from backend:", error.message);
+    res.status(500).send("Error fetching result from backend");
+  }
+});
+
+
 
 
 // Start the Express server
