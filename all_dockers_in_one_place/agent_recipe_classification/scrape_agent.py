@@ -11,6 +11,8 @@ import hashlib
 import re
 import json
 from pymongo import MongoClient, UpdateOne
+from playwright.sync_api import sync_playwright
+from dotenv import load_dotenv
 
 class RecipeScraper:
     def __init__(self, url, model="llama3:8B", cache_dir="cache",
@@ -26,6 +28,8 @@ class RecipeScraper:
         self.collection = self.client[mongo_db][mongo_collection]
         self.verbose = verbose
         self.debug = debug
+        self.LLM_API_URL = os.getenv("LLM_API_URL", "http://localhost:11434")
+        self.LLM_API_URL="http://host.docker.internal:11434/api/chat"
 
     @staticmethod
     def is_valid_url(user_input: str, verbose: int = 0, debug: bool = False) -> bool:
@@ -130,10 +134,7 @@ class RecipeScraper:
         print("\n✅ All URL validation tests passed.")
 
     def scrape_webpage(self, url, verbose=0, cache_dir="cache"):
-        """Scrapes a webpage and extracts text content. Uses local cache if available."""
         os.makedirs(cache_dir, exist_ok=True)
-
-        # Generate a unique filename based on the URL hash
         url_hash = hashlib.md5(url.encode()).hexdigest()
         cache_file = os.path.join(cache_dir, f"{url_hash}.html")
 
@@ -143,22 +144,46 @@ class RecipeScraper:
             with open(cache_file, "r", encoding="utf-8") as f:
                 html_content = f.read()
         else:
-            headers = {"User-Agent": "Mozilla/5.0"}
-            response = requests.get(url, headers=headers)
+            try:
+                with sync_playwright() as p:
+                    browser = p.chromium.launch(headless=True)
+                    context = browser.new_context()
+                    page = context.new_page()
+                    page.goto(url, timeout=60000)
+                    page.wait_for_load_state("domcontentloaded")
 
-            if response.status_code != 200:
-                return None, f"Error: Failed to fetch page (Status Code: {response.status_code})"
+                    # ✅ Extract cookies and user-agent from the browser
+                    cookies = context.cookies()
+                    ua = page.evaluate("() => navigator.userAgent")
+                    browser.close()
 
-            html_content = response.text
-            with open(cache_file, "w", encoding="utf-8") as f:
-                f.write(html_content)
-            if verbose >= 1:
-                print(f"[INFO] Saved HTML to {cache_file}")
+                    # 🔁 Convert cookies into a cookie header for requests
+                    cookie_header = '; '.join(f"{c['name']}={c['value']}" for c in cookies)
+                    headers = {
+                        "User-Agent": ua,
+                        "Cookie": cookie_header,
+                        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+                    }
+
+                    if verbose >= 2:
+                        print(f"[DEBUG] Headers used in requests:\n{headers}")
+
+                    response = requests.get(url, headers=headers)
+
+                    if response.status_code != 200:
+                        return None, f"Error: Failed to fetch page (Status Code: {response.status_code})"
+
+                    html_content = response.text
+
+                    with open(cache_file, "w", encoding="utf-8") as f:
+                        f.write(html_content)
+            except Exception as e:
+                return None, f"Error: Failed to fetch page with Playwright + requests: {e}"
 
         soup = BeautifulSoup(html_content, "html.parser")
         raw_text = unidecode(soup.get_text(separator="\n", strip=True))
 
-        with open('cached_page2.html', "w", encoding="utf-8") as f:
+        with open("cached_page2.html", "w", encoding="utf-8") as f:
             f.write(raw_text)
 
         if verbose >= 1:
@@ -410,37 +435,81 @@ class RecipeScraper:
         #     messages=[{"role": "user", "content": prompt}],
         #     options={"temperature": 0}  # Set model temperature to 0 for consistency
         # )
-        response = ollama.chat(
-            model="meta-llama-3-8b-instruct",  # Change to your exact model
-            # model="tulu-supernova",
-            messages=[
-                {
-                    "role": "system",
-                    "content": """
-                    You are a structured data extraction assistant. Always return valid JSON.
-    
-                    **IMPORTANT RULES**:
-                    - **DO NOT** return `"recipe": {}`. Just return JSON directly.
-                   # - **DO NOT** use `"name"`. Use `"title"` instead.
-                    - **DO NOT** add extra text like "Here is the extracted JSON".
-                    - **Ensure `"quantity"` is separated from `"unit"`** (e.g., `"4 oz"` → `"quantity": 4, "unit": "oz"`).
-                    - **break down amounts when both numerical values and units of measurement are present** (e.g., `"prep_time" : "15 minutes"` → `"prep_time": {"value" : 15, "unit": "minutes"}`).
-                    - **Put every numerical value that contains text in "" (e.g., instead of `15 hours`, return `"15 hours"`).**
-                    - **If an ingredient has no `"quantity"` or `"unit"`, remove those keys.**
-                    - **DO NOT** include Markdown formatting (` ```json ` or backticks).
-                    - **If the title is missing, return `"title": "Unknown Recipe"` instead of an empty string.**
-                    - **Return only valid JSON. No extra text, no code blocks, no explanations.**
-                    - **DO NOT use `...` or ellipsis — always return full lists (e.g., all steps and ingredients).**
-                    - AVOID TRUNCATING DATA
-                    - always preserve name of the ingredient
-                    """
-                },
-                {"role": "user", "content": prompt}  # Your actual query
-            ],
-            options={"temperature": 0}  # Keep deterministic
-        )
+        # response = ollama.chat(
+        #     model="meta-llama-3-8b-instruct",  # Change to your exact model
+        #     # model="tulu-supernova",
+        #     messages=[
+        #         {
+        #             "role": "system",
+        #             "content": """
+        #             You are a structured data extraction assistant. Always return valid JSON.
+        #
+        #             **IMPORTANT RULES**:
+        #             - **DO NOT** return `"recipe": {}`. Just return JSON directly.
+        #            # - **DO NOT** use `"name"`. Use `"title"` instead.
+        #             - **DO NOT** add extra text like "Here is the extracted JSON".
+        #             - **Ensure `"quantity"` is separated from `"unit"`** (e.g., `"4 oz"` → `"quantity": 4, "unit": "oz"`).
+        #             - **break down amounts when both numerical values and units of measurement are present** (e.g., `"prep_time" : "15 minutes"` → `"prep_time": {"value" : 15, "unit": "minutes"}`).
+        #             - **Put every numerical value that contains text in "" (e.g., instead of `15 hours`, return `"15 hours"`).**
+        #             - **If an ingredient has no `"quantity"` or `"unit"`, remove those keys.**
+        #             - **DO NOT** include Markdown formatting (` ```json ` or backticks).
+        #             - **If the title is missing, return `"title": "Unknown Recipe"` instead of an empty string.**
+        #             - **Return only valid JSON. No extra text, no code blocks, no explanations.**
+        #             - **DO NOT use `...` or ellipsis — always return full lists (e.g., all steps and ingredients).**
+        #             - AVOID TRUNCATING DATA
+        #             - always preserve name of the ingredient
+        #             """
+        #         },
+        #         {"role": "user", "content": prompt}  # Your actual query
+        #     ],
+        #     options={"temperature": 0},  # Keep deterministic
+        #     base_url=self.LLM_API_URL
+        # )
 
-        raw_output = response["message"]["content"].strip()
+        # 🧠 Construct Ollama /api/chat payload
+        payload = {
+            "model": "meta-llama-3-8b-instruct",
+            "messages": [
+                {"role": "system", "content": """
+                You are a structured data extraction assistant. Always return valid JSON.
+
+                **IMPORTANT RULES**:
+                - **DO NOT** return `"recipe": {}`. Just return JSON directly.
+                - **DO NOT** use `"name"`. Use `"title"` instead.
+                - **DO NOT** add extra text like "Here is the extracted JSON".
+                - **Ensure `"quantity"` is separated from `"unit"`** (e.g., `"4 oz"` → `"quantity": 4, "unit": "oz"`).
+                - **break down amounts when both numerical values and units of measurement are present** (e.g., `"prep_time" : "15 minutes"` → `"prep_time": {"value" : 15, "unit": "minutes"}`).
+                - **Put every numerical value that contains text in "" (e.g., instead of `15 hours`, return `"15 hours"`).**
+                - **If an ingredient has no `"quantity"` or `"unit"`, remove those keys.**
+                - **DO NOT** include Markdown formatting (` ```json ` or backticks).
+                - **If the title is missing, return `"title": "Unknown Recipe"` instead of an empty string.
+                - **Return only valid JSON. No extra text, no code blocks, no explanations.**
+                - **DO NOT use `...` or ellipsis — always return full lists (e.g., all steps and ingredients).**
+                - AVOID TRUNCATING DATA
+                - always preserve name of the ingredient
+                """},
+                {"role": "user", "content": prompt}
+            ],
+            "options": {
+                "temperature": 0
+            },
+            "stream": False  # Required to get full response in one chunk
+        }
+
+        # 🛰️ Send POST request to Ollama's chat endpoint
+        # response = requests.post(f"{self.LLM_API_URL}/api/chat", json=payload)
+        response = requests.post(f"{self.LLM_API_URL}", json=payload)
+
+        # # ✅ Extract raw content
+        # response.raise_for_status()  # Raises an error if Ollama failed
+        print('response for 1st prompt:')
+        print('---------------')
+        print(response.json())
+        print('---------------')
+        raw_output = response.json()["message"]["content"].strip()
+
+        # raw_output = response.json()["response"].strip()
+        # raw_output = response["message"]["content"].strip()
 
         if debug or verbose >= 2:
             print("\n[DEBUG] Raw LLM Output of the Initial parse:\n", raw_output)
@@ -492,11 +561,33 @@ class RecipeScraper:
             print("\n[DEBUG] Final prompt sent to LLM:\n")
             print(prompt)
 
-        response = ollama.chat(
-            # model="llama3:8B",  # Change to your exact model
-            model="meta-llama-3-8b-instruct",  # Change to your exact model
-            # model="tulu-supernova",  # Change to your exact model
-            messages=[
+        # response = ollama.chat(
+        #     # model="llama3:8B",  # Change to your exact model
+        #     model="meta-llama-3-8b-instruct",  # Change to your exact model
+        #     # model="tulu-supernova",  # Change to your exact model
+        #     messages=[
+        #         {
+        #             "role": "system",
+        #             "content": """
+        #             You are a structured data extraction assistant. Always return valid JSON.
+        #             return structured json.
+        #             Do not change any data, just the structure.
+        #             **DO NOT use `...` or ellipsis — always return full lists (e.g., all steps and ingredients).**
+        #             make sure the output is 100% compatible with json syntax
+        #             do not add quotation marks inside of a quotation
+        #             do not break the json syntax
+        #             """
+        #         },
+        #         {"role": "user", "content": prompt}  # Your actual query
+        #     ],
+        #     options={"temperature": 0},  # Keep deterministic
+        #     base_url=self.LLM_API_URL
+        # )
+
+
+        payload = {
+            "model": "meta-llama-3-8b-instruct",
+            "messages": [
                 {
                     "role": "system",
                     "content": """
@@ -509,12 +600,21 @@ class RecipeScraper:
                     do not break the json syntax
                     """
                 },
-                {"role": "user", "content": prompt}  # Your actual query
+                {
+                    "role": "user",
+                    "content": prompt
+                }
             ],
-            options={"temperature": 0}  # Keep deterministic
-        )
+            "options": {
+                "temperature": 0
+            },
+            "stream": False
+        }
 
-        raw_output = response["message"]["content"].strip()
+        response = requests.post(f"{self.LLM_API_URL}", json=payload)
+
+        # raw_output = response["message"]["content"].strip()
+        raw_output = response.json()["message"]["content"].strip()
 
         if debug or verbose >= 2:
             print("\n[DEBUG] Raw LLM Output after parsing amounts:\n", raw_output)
