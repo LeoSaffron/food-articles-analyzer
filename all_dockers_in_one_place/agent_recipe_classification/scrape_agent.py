@@ -14,6 +14,7 @@ from pymongo import MongoClient, UpdateOne
 from playwright.sync_api import sync_playwright
 from dotenv import load_dotenv
 import logging
+from time import sleep
 from fastapi.responses import StreamingResponse  # make sure this is imported
 
 
@@ -684,10 +685,38 @@ class RecipeScraper:
                 print(msg)
             # yield msg
 
+        def my_yield(message):
+            # arr = ' '.join(message)
+            for word in message:
+                yield f'{word} '
+                sleep(0.4)
+            yield '\n'
+
         if not self.is_valid_url(url, verbose=verbose, debug=debug):
             error_invalid_or_unsafe_url = "Invalid or potentially unsafe URL."
             log(error_invalid_or_unsafe_url)
-            yield f'"error": {error_invalid_or_unsafe_url}'
+            # yield f'"error": {error_invalid_or_unsafe_url}'
+            yield f'server malfunction\n'
+            sleep(1)
+            # yield from my_yield("this link broke the server")
+            yield from my_yield(["this", "link", "broke", "the", "server"])
+            # yield "this link broke the server\n"
+            for i in range(10):
+                yield '.'
+                sleep(1)
+            yield '\n'
+            # ["gaining", "access", "to", "root,", "please", "wait"]
+            yield from my_yield(["gaining", "access", "to", "root,", "please", "wait"])
+            # yield "gaining access to root, please wait\n"
+            for i in range(19):
+                yield '.'
+                sleep(1)
+            yield '\n'
+            yield from my_yield(["or", "is", "it"])
+            # yield "or is it?\n"
+            for i in range(24):
+                yield '.'
+                sleep(1)
             return {"error": error_invalid_or_unsafe_url}
         else:
             raw_text, error = self.scrape_webpage(url, verbose)
