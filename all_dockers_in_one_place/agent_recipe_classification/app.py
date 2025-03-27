@@ -253,7 +253,7 @@ def is_potential_ingredient(text):
 
 
 # 🔹 Query self-hosted Llama 3 (via Ollama) for ingredient classification
-def query_llm(ingredient):
+def query_llm(ingredient, debug=False, verbose=0):
     """Ask Llama3 for plant-based classification with confidence handling and logging."""
     # url = "http://localhost:11434/api/generate"
     url = LLM_API_URL
@@ -279,22 +279,30 @@ def query_llm(ingredient):
     - Not Plant-Based  
     """
 
+    if debug or verbose >= 2:
+        print(f"\n[DEBUG] Ingredient classification: {ingredient}. Final prompt sent to LLM:\n")
+        print(prompt)
+
     payload = {"model": "llama3", "prompt": prompt, "stream": False}
     response = requests.post(url, json=payload)
 
     llm_response = response.json()["response"].strip()
 
+    if debug or verbose >= 2:
+        print("\n[DEBUG] Ingredient classification: {ingredient}. Output LLM:\n")
+        print(llm_response)
+
     # Confidence Handling: If response is unclear, default to "Check for Vegan Version"
     valid_labels = [
         "Always Plant-Based",
         "Usually Plant-Based",
-        "Check for Vegan Version",
+        "Check for Plant-Based Version",
         "Can Be Substituted",
         "Not Plant-Based"
     ]
     if llm_response not in valid_labels:
         misclassified_collection.insert_one({"ingredient": ingredient, "llm_response": llm_response})
-        return "Check for Vegan Version"  # Default fallback
+        return "Check for Plant-Based Version"  # Default fallback
 
     return llm_response
 
@@ -466,8 +474,9 @@ def check_recipe_stream(url: str):
         else:
             yield "[INFO] Recipe found in database.\n"
 
-        yield "[INFO] Extracting ingredients and analyzing...\n"
+        yield "[INFO] Extracting ingredients...\n"
         ingredients = extract_ingredients(recipe)
+        yield "[INFO] Successfully Extracted ingredient list. Analyzing each ingredient...\n"
         result_map = {ing: query_llm(ing) for ing in ingredients}
 
         yield "[INFO] Finished analysis.\n"

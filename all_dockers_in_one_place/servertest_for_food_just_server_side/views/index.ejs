@@ -247,7 +247,7 @@ async function analyzeWithStreaming(url) {
     const resultData = await resultResponse.json();
     resultsDiv.innerHTML = `<pre>${JSON.stringify(resultData, null, 2)}</pre>`;
   } catch (err) {
-    resultsDiv.innerText = "Error fetching final result";
+    //resultsDiv.innerText = "Error fetching final result";
     console.error("Error fetching result:", err);
   }
 }
