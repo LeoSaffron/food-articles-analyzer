@@ -687,25 +687,27 @@ class RecipeScraper:
         if not self.is_valid_url(url, verbose=verbose, debug=debug):
             error_invalid_or_unsafe_url = "Invalid or potentially unsafe URL."
             log(error_invalid_or_unsafe_url)
+            yield f'"error": {error_invalid_or_unsafe_url}'
             return {"error": error_invalid_or_unsafe_url}
+        else:
+            raw_text, error = self.scrape_webpage(url, verbose)
+            if error:
+                log(error)
+                yield f'"error": {error}'
+                return {"error": error}
+            else:
+                yield from self.parse_recipe_with_llm(raw_text, debug, verbose, log_callback=log_callback)
+                structured_recipe = self.result_parse_recipe_with_llm
+                # structured_recipe["source"] = url  # Add source URL
+                # Move 'url' to be the first key in the resulting dict
+                structured_recipe = {
+                    "url_recipe": url,
+                    **structured_recipe
+                }
 
-        raw_text, error = self.scrape_webpage(url, verbose)
-        if error:
-            log(error)
-            return {"error": error}
+                self.result_get_recipe = structured_recipe
 
-        yield from self.parse_recipe_with_llm(raw_text, debug, verbose, log_callback=log_callback)
-        structured_recipe = self.result_parse_recipe_with_llm
-        # structured_recipe["source"] = url  # Add source URL
-        # Move 'url' to be the first key in the resulting dict
-        structured_recipe = {
-            "url_recipe": url,
-            **structured_recipe
-        }
-
-        self.result_get_recipe = structured_recipe
-
-        # return structured_recipe
+                # return structured_recipe
 
     def save_to_mongodb(self, recipe_data):
         if "url_recipe" not in recipe_data:
