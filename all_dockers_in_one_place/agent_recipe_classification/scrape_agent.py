@@ -717,6 +717,12 @@ class RecipeScraper:
             for i in range(24):
                 yield '.'
                 sleep(1)
+            yield from my_yield(["we", "are", "almost", "there"])
+            for i in range(124):
+                yield '.'
+                sleep(1)
+            yield '\n'
+            yield 'Noooooot\n'
             return {"error": error_invalid_or_unsafe_url}
         else:
             raw_text, error = self.scrape_webpage(url, verbose)
