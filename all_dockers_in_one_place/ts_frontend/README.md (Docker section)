@@ -1,0 +1,126 @@
+## Docker Setup
+
+The application can be run in both development and production modes using Docker.
+
+### Development Mode
+
+Development mode includes hot-reloading and debugging capabilities:
+
+```bash
+# Start development container
+./scripts/docker-dev.sh
+
+# Or using docker-compose directly
+docker-compose up web-dev
+```
+
+The development server will be available at `http://localhost:3000`
+
+Features:
+- Hot-reloading
+- Source code mounting
+- Development dependencies included
+- Real-time code updates
+
+### Production Mode
+
+Production mode runs an optimized build:
+
+```bash
+# Start production container
+./scripts/docker-prod.sh
+
+# Or using docker-compose directly
+docker-compose up web-prod
+```
+
+The production server will be available at `http://localhost:3000`
+
+Features:
+- Optimized build
+- Minimal dependencies
+- Production-ready configuration
+
+### Making Changes
+
+In development mode, changes to the source code will automatically trigger a rebuild of the affected components. The process works as follows:
+
+1. Edit any source file
+2. Next.js will detect the change
+3. The application will hot-reload
+4. Changes will be visible in the browser
+
+No container rebuild is necessary for code changes in development mode.
+
+### Container Management
+
+Common Docker commands:
+
+```bash
+# View logs
+docker-compose logs -f web-dev
+
+# Stop containers
+docker-compose down
+
+# Rebuild containers
+docker-compose build
+
+# Remove volumes
+docker-compose down -v
+```
+
+### Troubleshooting Docker
+
+1. Port Conflicts
+```bash
+# Check if port 3000 is in use
+lsof -i :3000
+
+# Change port in docker-compose.yml if needed
+ports:
+  - "3001:3000"  # Maps container port 3000 to host port 3001
+```
+
+2. Volume Mounting Issues
+```bash
+# Verify volume mounts
+docker-compose exec web-dev ls -la /app
+
+# Reset volumes
+docker-compose down -v
+docker-compose up web-dev
+```
+
+3. Hot Reload Not Working
+```bash
+# Check Next.js logs
+docker-compose logs -f web-dev
+
+# Restart development container
+docker-compose restart web-dev
+```
+
+### Environment Variables
+
+Docker environment variables can be set in:
+- docker-compose.yml
+- .env file (not tracked in git)
+- Command line when running containers
+
+Example .env file:
+```env
+NEXT_PUBLIC_API_HOST=host.docker.internal
+NEXT_PUBLIC_API_PORT=8002
+```
+
+### Docker Network Configuration
+
+The containers are configured to access the host machine through `host.docker.internal`:
+
+```yaml
+extra_hosts:
+  - "host.docker.internal:host-gateway"
+```
+
+This allows the application to connect to services running on the host machine, such as the recipe analysis service.

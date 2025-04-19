@@ -1,0 +1,54 @@
+# Development stage
+FROM node:18-alpine AS development
+
+# Set working directory
+WORKDIR /app
+
+# Install dependencies first
+COPY package.json ./
+
+# Install dependencies explicitly
+RUN npm install && \
+    mkdir -p node_modules/.bin && \
+    ln -s ../next/dist/bin/next node_modules/.bin/next
+
+# Copy the rest of the code
+COPY . .
+
+# Expose port
+EXPOSE 3000
+
+# Use shell form to ensure PATH is properly set
+CMD cd /app && PATH=/app/node_modules/.bin:$PATH npm run dev
+
+# Production stage
+FROM node:18-alpine AS production
+
+# Set working directory
+WORKDIR /app
+
+# Add dependencies for building
+RUN apk add --no-cache libc6-compat
+
+# Install dependencies first
+COPY package.json ./
+
+# Install dependencies explicitly
+RUN npm install && \
+    mkdir -p node_modules/.bin && \
+    ln -s ../next/dist/bin/next node_modules/.bin/next
+
+# Copy the rest of the code
+COPY . .
+
+# Build the application
+RUN cd /app && PATH=/app/node_modules/.bin:$PATH npm run build
+
+# Install only production dependencies
+RUN npm prune --production
+
+# Expose port
+EXPOSE 3000
+
+# Start production server
+CMD ["npm", "start"]
