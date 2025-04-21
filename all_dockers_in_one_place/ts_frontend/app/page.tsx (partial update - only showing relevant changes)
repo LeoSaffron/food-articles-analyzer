@@ -1,0 +1,35 @@
+import { logDebug } from '@/lib/logger'
+
+// ... rest of the imports
+
+const analyzeRecipe = async (e: React.FormEvent) => {
+  e.preventDefault()
+  
+  logDebug('Starting recipe analysis', { url })
+
+  try {
+    const baseUrl = `http://${CONFIG.api.host}:${CONFIG.api.port}`
+    logDebug('API Configuration', { baseUrl, ...CONFIG.api })
+
+    // Stream Request
+    logDebug('Initiating stream request', { url: `${baseUrl}/check_recipe_stream` })
+    const streamResponse = await fetch(`${baseUrl}/check_recipe_stream?url=${encodeURIComponent(url)}`)
+    
+    logDebug('Stream response received', { 
+      status: streamResponse.status,
+      headers: Object.fromEntries(streamResponse.headers)
+    })
+
+    // ... rest of the function
+
+  } catch (error) {
+    logDebug('Analysis error occurred', {
+      error: {
+        message: error.message,
+        stack: error.stack,
+        name: error.name
+      }
+    })
+    // ... rest of error handling
+  }
+}

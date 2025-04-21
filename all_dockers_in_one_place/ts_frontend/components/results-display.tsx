@@ -2,6 +2,7 @@
 
 import { motion } from "framer-motion"
 import { CheckCircle, XCircle, AlertCircle } from "lucide-react"
+import { safeObjectEntries } from "@/lib/utils/safe-object"
 
 interface IngredientResults {
   [key: string]: string
@@ -74,7 +75,7 @@ export default function ResultsDisplay({ results }: ResultsDisplayProps) {
       <div>
         <h3 className="text-lg font-semibold mb-3">Ingredients Analysis</h3>
         <div className="space-y-2">
-          {Object.entries(results.ingredient_results).map(([ingredient, status], index) => (
+          {safeObjectEntries(results.ingredient_results).map(([ingredient, status], index) => (
             <motion.div
               key={index}
               initial={{ opacity: 0, x: -20 }}

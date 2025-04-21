@@ -1,0 +1,21 @@
+import TrendsSidebar from '@/components/trends-sidebar'
+
+// ... rest of the imports
+
+export default function Home() {
+  // ... rest of the component implementation
+
+  return (
+    <div className="container mx-auto px-4 py-8">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <div className="md:col-span-2">
+          {/* ... existing card content ... */}
+        </div>
+
+        <div className="md:col-span-1">
+          <TrendsSidebar />
+        </div>
+      </div>
+    </div>
+  )
+}

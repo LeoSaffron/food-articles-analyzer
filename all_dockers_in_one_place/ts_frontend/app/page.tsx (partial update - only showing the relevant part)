@@ -1,0 +1,16 @@
+"use client"
+
+// ... other imports
+import dynamic from 'next/dynamic'
+import TrendsSidebarFallback from '@/components/trends-sidebar-fallback'
+
+// Dynamically import TrendsSidebar with fallback
+const TrendsSidebar = dynamic(
+  () => import('@/components/trends-sidebar'),
+  {
+    ssr: false,
+    loading: () => <TrendsSidebarFallback />
+  }
+)
+
+// ... rest of the component remains the same

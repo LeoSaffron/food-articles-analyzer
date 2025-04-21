@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { motion } from "framer-motion"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -9,7 +9,12 @@ import { Progress } from "@/components/ui/progress"
 import { useToast } from "@/components/ui/use-toast"
 import TrendsSidebar from "@/components/trends-sidebar"
 import ResultsDisplay from "@/components/results-display"
-import { CONFIG } from "@/lib/config"
+import { logger } from "@/lib/logger"
+
+const API_CONFIG = {
+  host: process.env.NEXT_PUBLIC_API_HOST,
+  port: process.env.NEXT_PUBLIC_API_PORT
+}
 
 export default function Home() {
   const [url, setUrl] = useState("")
@@ -17,21 +22,10 @@ export default function Home() {
   const [progress, setProgress] = useState(0)
   const [status, setStatus] = useState("")
   const [results, setResults] = useState(null)
-  const [error, setError] = useState<Error | null>(null)
-  const [debugLog, setDebugLog] = useState<string[]>([])
   const { toast } = useToast()
-
-  const addDebugLog = (message: string) => {
-    if (!CONFIG.debug) return;
-    const timestamp = new Date().toISOString()
-    const logMessage = `[${timestamp}] ${message}`
-    console.log(logMessage)
-    setDebugLog(prev => [...prev, logMessage])
-  }
 
   const analyzeRecipe = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (CONFIG.debug) setDebugLog([]) // Clear previous debug logs
     
     if (!url) {
       toast({
@@ -45,46 +39,67 @@ export default function Home() {
     setLoading(true)
     setProgress(0)
     setResults(null)
-    setError(null)
     setStatus("Starting analysis...")
 
-    const baseUrl = `http://${CONFIG.api.host}:${CONFIG.api.port}`
-    addDebugLog(`API Configuration: ${JSON.stringify(CONFIG.api, null, 2)}`)
-    addDebugLog(`Analyzing URL: ${url}`)
+    const baseUrl = `http://${API_CONFIG.host}:${API_CONFIG.port}`
+    logger.debug('Starting recipe analysis', { url, baseUrl })
 
     try {
       // Stream Request
+      setStatus("Connecting to analysis service...")
+      logger.debug('Initiating stream request')
+      
       const streamResponse = await fetch(`${baseUrl}/check_recipe_stream?url=${encodeURIComponent(url)}`)
-      addDebugLog(`Stream response status: ${streamResponse.status}`)
       
       if (!streamResponse.ok) {
         throw new Error(`Stream request failed with status ${streamResponse.status}`)
       }
 
+      logger.debug('Stream connected, reading data...')
       const reader = streamResponse.body.getReader()
       const decoder = new TextDecoder()
 
       while (true) {
         const { done, value } = await reader.read()
-        if (done) break
+        if (done) {
+          logger.debug('Stream completed')
+          break
+        }
 
         const text = decoder.decode(value)
-        addDebugLog(`Stream chunk: ${text}`)
+        logger.debug('Received stream chunk', { text })
         
         const lines = text.split('\n')
 
         for (const line of lines) {
           if (line.trim()) {
             setStatus(line.trim())
-            if (line.includes("scraping")) setProgress(25)
-            else if (line.includes("Extracting ingredients")) setProgress(50)
-            else if (line.includes("Analyzing each ingredient")) setProgress(75)
-            else if (line.includes("Finished analysis")) setProgress(100)
+            logger.debug('Processing status', { status: line.trim() })
+            
+            if (line.includes("scraping")) {
+              setProgress(25)
+              logger.debug('Progress update', { progress: 25 })
+            }
+            else if (line.includes("Extracting ingredients")) {
+              setProgress(50)
+              logger.debug('Progress update', { progress: 50 })
+            }
+            else if (line.includes("Analyzing each ingredient")) {
+              setProgress(75)
+              logger.debug('Progress update', { progress: 75 })
+            }
+            else if (line.includes("Finished analysis")) {
+              setProgress(100)
+              logger.debug('Progress update', { progress: 100 })
+            }
           }
         }
       }
 
       // Get final results
+      setStatus("Fetching analysis results...")
+      logger.debug('Requesting final results')
+      
       const resultResponse = await fetch(`${baseUrl}/check_recipe_result?url=${encodeURIComponent(url)}`)
       
       if (!resultResponse.ok) {
@@ -92,26 +107,27 @@ export default function Home() {
       }
 
       const resultData = await resultResponse.json()
-      addDebugLog(`Results received: ${JSON.stringify(resultData, null, 2)}`)
+      logger.debug('Results received', resultData)
       
       setResults(resultData)
+      setStatus("Analysis complete")
 
       toast({
         title: "Success",
         description: "Recipe analysis complete",
       })
     } catch (error) {
-      console.error('Analysis error:', error)
-      setError(error)
-      addDebugLog(`Error: ${error.message}`)
+      logger.error('Analysis failed', error as Error, { url, baseUrl })
+      setStatus("Analysis failed")
       
       toast({
         title: "Error",
-        description: "Failed to analyze recipe. Please try again.",
+        description: error.message || "Failed to analyze recipe. Please try again.",
         variant: "destructive",
       })
     } finally {
       setLoading(false)
+      logger.debug('Analysis process ended')
     }
   }
 
@@ -120,15 +136,6 @@ export default function Home() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
         <div className="md:col-span-2">
           <Card className="p-6 shadow-lg">
-            {/* Debug Mode Indicator */}
-            {CONFIG.debug && (
-              <div className="mb-4 p-2 bg-gray-100 dark:bg-gray-800 rounded text-sm">
-                <h3 className="font-bold mb-2">Debug Mode Active</h3>
-                <p>API Host: {CONFIG.api.host}</p>
-                <p>API Port: {CONFIG.api.port}</p>
-              </div>
-            )}
-
             <form onSubmit={analyzeRecipe} className="space-y-4">
               <div className="space-y-2">
                 <h2 className="text-2xl font-bold">Analyze Recipe</h2>
@@ -161,37 +168,12 @@ export default function Home() {
                 animate={{ opacity: 1 }}
                 className="mt-6 space-y-4"
               >
-                <p className="text-sm text-muted-foreground">{status}</p>
+                <div className="flex justify-between items-center">
+                  <p className="text-sm text-muted-foreground">{status}</p>
+                  <p className="text-sm text-muted-foreground">{progress}%</p>
+                </div>
                 <Progress value={progress} />
               </motion.div>
-            )}
-
-            {/* Debug Log */}
-            {CONFIG.debug && debugLog.length > 0 && (
-              <div className="mt-6">
-                <h3 className="font-bold mb-2">Debug Log:</h3>
-                <div className="bg-black text-green-400 p-4 rounded-lg overflow-auto max-h-96 font-mono text-sm">
-                  {debugLog.map((log, index) => (
-                    <div key={index} className="whitespace-pre-wrap">
-                      {log}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Error Display */}
-            {CONFIG.debug && error && (
-              <div className="mt-4 p-4 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-lg">
-                <h3 className="font-bold">Error Details:</h3>
-                <pre className="mt-2 whitespace-pre-wrap text-sm">
-                  {JSON.stringify({
-                    message: error.message,
-                    name: error.name,
-                    stack: error.stack,
-                  }, null, 2)}
-                </pre>
-              </div>
             )}
 
             {results && <ResultsDisplay results={results} />}

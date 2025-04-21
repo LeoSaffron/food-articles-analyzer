@@ -1,35 +1,13 @@
-I'll fix the build errors and accessibility issues. The main problem is with the configuration imports and usage. Let's fix the files:
+Let's fix both the analysis progress issue and the logging permissions. First, let's debug the analysis process and then fix the logging:
 
-=== Start File ===
-lib/config.ts
----
-interface ApiConfig {
-  host: string;
-  port: string;
-}
-
-export const CONFIG = {
-  debug: process.env.ENABLE_DEBUG === 'true',
-  api: {
-    host: process.env.NEXT_PUBLIC_API_HOST || 'localhost',
-    port: process.env.NEXT_PUBLIC_API_PORT || '8002'
-  }
-} as const;
-
-export function getApiConfig(): ApiConfig {
-  return {
-    host: process.env.NEXT_PUBLIC_API_HOST || 'localhost',
-    port: process.env.NEXT_PUBLIC_API_PORT || '8002'
-  };
-}
-=== End File ===
+1. Update the page component to show more detailed progress:
 
 === Start File ===
 app/page.tsx
 ---
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { motion } from "framer-motion"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -38,7 +16,12 @@ import { Progress } from "@/components/ui/progress"
 import { useToast } from "@/components/ui/use-toast"
 import TrendsSidebar from "@/components/trends-sidebar"
 import ResultsDisplay from "@/components/results-display"
-import { CONFIG } from "@/lib/config"
+import { logger } from "@/lib/logger"
+
+const API_CONFIG = {
+  host: process.env.NEXT_PUBLIC_API_HOST,
+  port: process.env.NEXT_PUBLIC_API_PORT
+}
 
 export default function Home() {
   const [url, setUrl] = useState("")
@@ -46,21 +29,10 @@ export default function Home() {
   const [progress, setProgress] = useState(0)
   const [status, setStatus] = useState("")
   const [results, setResults] = useState(null)
-  const [error, setError] = useState<Error | null>(null)
-  const [debugLog, setDebugLog] = useState<string[]>([])
   const { toast } = useToast()
-
-  const addDebugLog = (message: string) => {
-    if (!CONFIG.debug) return;
-    const timestamp = new Date().toISOString()
-    const logMessage = `[${timestamp}] ${message}`
-    console.log(logMessage)
-    setDebugLog(prev => [...prev, logMessage])
-  }
 
   const analyzeRecipe = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (CONFIG.debug) setDebugLog([]) // Clear previous debug logs
     
     if (!url) {
       toast({
@@ -74,46 +46,67 @@ export default function Home() {
     setLoading(true)
     setProgress(0)
     setResults(null)
-    setError(null)
     setStatus("Starting analysis...")
 
-    const baseUrl = `http://${CONFIG.api.host}:${CONFIG.api.port}`
-    addDebugLog(`API Configuration: ${JSON.stringify(CONFIG.api, null, 2)}`)
-    addDebugLog(`Analyzing URL: ${url}`)
+    const baseUrl = `http://${API_CONFIG.host}:${API_CONFIG.port}`
+    logger.debug('Starting recipe analysis', { url, baseUrl })
 
     try {
       // Stream Request
+      setStatus("Connecting to analysis service...")
+      logger.debug('Initiating stream request')
+      
       const streamResponse = await fetch(`${baseUrl}/check_recipe_stream?url=${encodeURIComponent(url)}`)
-      addDebugLog(`Stream response status: ${streamResponse.status}`)
       
       if (!streamResponse.ok) {
         throw new Error(`Stream request failed with status ${streamResponse.status}`)
       }
 
+      logger.debug('Stream connected, reading data...')
       const reader = streamResponse.body.getReader()
       const decoder = new TextDecoder()
 
       while (true) {
         const { done, value } = await reader.read()
-        if (done) break
+        if (done) {
+          logger.debug('Stream completed')
+          break
+        }
 
         const text = decoder.decode(value)
-        addDebugLog(`Stream chunk: ${text}`)
+        logger.debug('Received stream chunk', { text })
         
         const lines = text.split('\n')
 
         for (const line of lines) {
           if (line.trim()) {
             setStatus(line.trim())
-            if (line.includes("scraping")) setProgress(25)
-            else if (line.includes("Extracting ingredients")) setProgress(50)
-            else if (line.includes("Analyzing each ingredient")) setProgress(75)
-            else if (line.includes("Finished analysis")) setProgress(100)
+            logger.debug('Processing status', { status: line.trim() })
+            
+            if (line.includes("scraping")) {
+              setProgress(25)
+              logger.debug('Progress update', { progress: 25 })
+            }
+            else if (line.includes("Extracting ingredients")) {
+              setProgress(50)
+              logger.debug('Progress update', { progress: 50 })
+            }
+            else if (line.includes("Analyzing each ingredient")) {
+              setProgress(75)
+              logger.debug('Progress update', { progress: 75 })
+            }
+            else if (line.includes("Finished analysis")) {
+              setProgress(100)
+              logger.debug('Progress update', { progress: 100 })
+            }
           }
         }
       }
 
       // Get final results
+      setStatus("Fetching analysis results...")
+      logger.debug('Requesting final results')
+      
       const resultResponse = await fetch(`${baseUrl}/check_recipe_result?url=${encodeURIComponent(url)}`)
       
       if (!resultResponse.ok) {
@@ -121,26 +114,27 @@ export default function Home() {
       }
 
       const resultData = await resultResponse.json()
-      addDebugLog(`Results received: ${JSON.stringify(resultData, null, 2)}`)
+      logger.debug('Results received', resultData)
       
       setResults(resultData)
+      setStatus("Analysis complete")
 
       toast({
         title: "Success",
         description: "Recipe analysis complete",
       })
     } catch (error) {
-      console.error('Analysis error:', error)
-      setError(error)
-      addDebugLog(`Error: ${error.message}`)
+      logger.error('Analysis failed', error as Error, { url, baseUrl })
+      setStatus("Analysis failed")
       
       toast({
         title: "Error",
-        description: "Failed to analyze recipe. Please try again.",
+        description: error.message || "Failed to analyze recipe. Please try again.",
         variant: "destructive",
       })
     } finally {
       setLoading(false)
+      logger.debug('Analysis process ended')
     }
   }
 
@@ -149,15 +143,6 @@ export default function Home() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
         <div className="md:col-span-2">
           <Card className="p-6 shadow-lg">
-            {/* Debug Mode Indicator */}
-            {CONFIG.debug && (
-              <div className="mb-4 p-2 bg-gray-100 dark:bg-gray-800 rounded text-sm">
-                <h3 className="font-bold mb-2">Debug Mode Active</h3>
-                <p>API Host: {CONFIG.api.host}</p>
-                <p>API Port: {CONFIG.api.port}</p>
-              </div>
-            )}
-
             <form onSubmit={analyzeRecipe} className="space-y-4">
               <div className="space-y-2">
                 <h2 className="text-2xl font-bold">Analyze Recipe</h2>
@@ -190,37 +175,12 @@ export default function Home() {
                 animate={{ opacity: 1 }}
                 className="mt-6 space-y-4"
               >
-                <p className="text-sm text-muted-foreground">{status}</p>
+                <div className="flex justify-between items-center">
+                  <p className="text-sm text-muted-foreground">{status}</p>
+                  <p className="text-sm text-muted-foreground">{progress}%</p>
+                </div>
                 <Progress value={progress} />
               </motion.div>
-            )}
-
-            {/* Debug Log */}
-            {CONFIG.debug && debugLog.length > 0 && (
-              <div className="mt-6">
-                <h3 className="font-bold mb-2">Debug Log:</h3>
-                <div className="bg-black text-green-400 p-4 rounded-lg overflow-auto max-h-96 font-mono text-sm">
-                  {debugLog.map((log, index) => (
-                    <div key={index} className="whitespace-pre-wrap">
-                      {log}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Error Display */}
-            {CONFIG.debug && error && (
-              <div className="mt-4 p-4 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-lg">
-                <h3 className="font-bold">Error Details:</h3>
-                <pre className="mt-2 whitespace-pre-wrap text-sm">
-                  {JSON.stringify({
-                    message: error.message,
-                    name: error.name,
-                    stack: error.stack,
-                  }, null, 2)}
-                </pre>
-              </div>
             )}
 
             {results && <ResultsDisplay results={results} />}
@@ -236,86 +196,165 @@ export default function Home() {
 }
 === End File ===
 
+2. Fix the logging permissions and implementation:
+
 === Start File ===
-next.config.js
+app/api/log/route.ts
 ---
-/** @type {import('next').NextConfig} */
-const nextConfig = {
-  reactStrictMode: true,
-  swcMinify: true,
-  output: 'standalone',
-  // Ensure proper hostname resolution
-  experimental: {
-    appDir: true,
-  },
+import { NextRequest, NextResponse } from 'next/server'
+import fs from 'fs'
+import path from 'path'
+
+const LOG_DIR = path.join(process.cwd(), 'logs')
+
+// Ensure log directory exists with proper permissions
+try {
+  if (!fs.existsSync(LOG_DIR)) {
+    fs.mkdirSync(LOG_DIR, { recursive: true, mode: 0o755 })
+  }
+} catch (error) {
+  console.error('Failed to create log directory:', error)
 }
 
-module.exports = nextConfig
+function writeLog(filename: string, message: string) {
+  const logPath = path.join(LOG_DIR, filename)
+  const timestamp = new Date().toISOString()
+  const logEntry = `[${timestamp}] ${message}\n`
+
+  try {
+    // Create file with proper permissions if it doesn't exist
+    if (!fs.existsSync(logPath)) {
+      fs.writeFileSync(logPath, '', { mode: 0o644 })
+    }
+    
+    // Append log entry
+    fs.appendFileSync(logPath, logEntry, { encoding: 'utf8' })
+    
+    // Ensure proper permissions
+    fs.chmodSync(logPath, 0o644)
+    
+    if (process.env.NODE_ENV === 'development') {
+      console.log(logEntry.trim())
+    }
+  } catch (error) {
+    console.error('Failed to write log:', error)
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json()
+    const { type, message, data } = body
+
+    const logMessage = data 
+      ? `${message}\nData: ${JSON.stringify(data, null, 2)}`
+      : message
+
+    switch (type) {
+      case 'access':
+        writeLog('access.log', `[ACCESS] ${logMessage}`)
+        break
+      case 'debug':
+        if (process.env.ENABLE_DEBUG === 'true') {
+          writeLog('debug.log', `[DEBUG] ${logMessage}`)
+        }
+        break
+      case 'error':
+        writeLog('error.log', `[ERROR] ${logMessage}`)
+        break
+      default:
+        return NextResponse.json({ error: 'Invalid log type' }, { status: 400 })
+    }
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('Logging error:', error)
+    return NextResponse.json({ error: 'Logging failed' }, { status: 500 })
+  }
+}
 === End File ===
+
+3. Add a script to fix log permissions:
 
 === Start File ===
-.env.local
+scripts/fix-permissions.js
 ---
-# API Configuration
-NEXT_PUBLIC_API_HOST=recipesanalysis.cloud
-NEXT_PUBLIC_API_PORT=44251
+const fs = require('fs');
+const path = require('path');
 
-# Debug Mode (true/false)
-ENABLE_DEBUG=false
+const LOG_DIR = path.join(process.cwd(), 'logs');
 
-# Server Configuration
-PORT=3000
+try {
+  // Create logs directory if it doesn't exist
+  if (!fs.existsSync(LOG_DIR)) {
+    fs.mkdirSync(LOG_DIR, { recursive: true, mode: 0o755 });
+    console.log('Created logs directory with correct permissions');
+  }
+
+  // Fix directory permissions
+  fs.chmodSync(LOG_DIR, 0o755);
+  console.log('Fixed logs directory permissions');
+
+  // Fix file permissions
+  const files = fs.readdirSync(LOG_DIR);
+  files.forEach(file => {
+    const filePath = path.join(LOG_DIR, file);
+    fs.chmodSync(filePath, 0o644);
+    console.log(`Fixed permissions for ${file}`);
+  });
+
+  console.log('All permissions fixed successfully');
+} catch (error) {
+  console.error('Error fixing permissions:', error);
+  process.exit(1);
+}
 === End File ===
 
-Key fixes made:
+4. Add the script to package.json:
 
-1. Fixed configuration exports:
-   - Removed getDebugMode and getApiConfig functions
-   - Using CONFIG constant instead
-   - Added proper TypeScript interfaces
-
-2. Fixed page component:
-   - Updated imports to use CONFIG
-   - Removed unused functions
-   - Fixed type errors
-
-3. Added proper environment configuration:
-   - Default values for all settings
-   - Type-safe configuration
-   - Server-side debug control
-
-4. Fixed build configuration:
-   - Added proper Next.js configuration
-   - Fixed experimental features
-   - Added proper output configuration
-
-To run the application:
-
-1. Set up environment:
-```bash
-# Copy environment file
-cp .env.example .env.local
-
-# Edit with your settings
-nano .env.local
+```json
+{
+  "scripts": {
+    "fix-permissions": "node scripts/fix-permissions.js",
+    "predev": "npm run fix-permissions",
+    "prebuild": "npm run fix-permissions"
+  }
+}
 ```
 
-2. Install dependencies:
+To fix the issues:
+
+1. Fix permissions:
 ```bash
-npm install
+# Stop the server
+npm run fix-permissions
+
+# Check permissions
+ls -l logs/
 ```
 
-3. Build and start:
+2. Clear existing logs:
 ```bash
-# Development
+rm -rf logs/*
+```
+
+3. Restart the server:
+```bash
 npm run dev
-
-# Production
-npm run build
-npm start
 ```
 
-The application should now build and run without errors. Let me know if you need any clarification or encounter other issues!
-Checking for production readiness
-Running command: NEXT_DIST_DIR=.build npm run buildStarting development server
-Running command: PORT=8080 npm run dev
+The changes include:
+
+1. More detailed progress tracking
+2. Proper log file permissions
+3. Better error handling
+4. More debug information
+5. Automatic permission fixing
+6. Better status updates
+
+Try analyzing a recipe now - you should see:
+- More detailed progress updates
+- Proper log files with correct permissions
+- Better error handling if something goes wrong
+
+Let me know if you still experience any issues!

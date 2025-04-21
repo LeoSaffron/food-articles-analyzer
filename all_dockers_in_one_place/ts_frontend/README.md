@@ -1,195 +1,95 @@
-# Recipe Analyzer Frontend
+# Application Logging System
 
-A Next.js application for analyzing recipes for plant-based compatibility.
+## Overview
 
-## Prerequisites
+This application uses a comprehensive logging system that provides structured logs for both client and server-side operations. The logging system includes features such as:
 
-- Node.js (v16 or higher)
-- npm (v7 or higher)
+- Structured JSON logging
+- Log rotation to prevent log files from growing too large
+- Request ID tracking for tracing requests across the system
+- Performance metrics logging
+- Different log levels (access, info, debug, error, warn)
+- Source IP address tracking for all requests
+- Log analysis tools
+- Edge runtime compatibility
 
-## Installation
+## Log Files
 
-1. Clone the repository:
+Logs are stored in the `logs/` directory and include:
+
+- `access.log` - HTTP requests and general access information
+- `error.log` - Application errors and exceptions
+- `debug.log` - Detailed debug information (only when enabled)
+
+## Troubleshooting Logging
+
+If logs aren't being written to files, you can run the test script to diagnose issues:
+
 ```bash
-git clone <repository-url>
-cd recipe-analyzer-frontend
+npm run test:logs
 ```
 
-2. Install dependencies:
+This will check if the logs directory exists, if log files are writable, and attempt to write test entries to the log files.
+
+## Environment Variables
+
+To enable debug logging, run the application with:
+
 ```bash
-npm install
+ENABLE_DEBUG=true npm run dev
 ```
+
+## Edge Runtime Compatibility
+
+The logging system is designed to work in both Node.js and Edge runtime environments:
+
+- In Node.js environments, logs are written to files in the `logs/` directory
+- In Edge runtime environments, logs are stored in memory and also output to the console
+- The API route for client-side logging is configured to use Node.js runtime
+
+To access in-memory logs from Edge runtime:
+
+```typescript
+import { getMemoryLogs } from '@/lib/server-logger';
+
+// Get all access logs stored in memory
+const accessLogs = getMemoryLogs('access');
+
+// Get all error logs stored in memory
+const errorLogs = getMemoryLogs('error');
+```
+
+## Log Analysis
+
+The application includes a log analysis tool that can be used to search and filter logs:
+
+```bash
+# View all logs
+npm run logs
+
+# View only errors
+npm run logs:errors
+
+# View slow requests (>500ms)
+npm run logs:slow
+
+# Custom filtering
+node scripts/logs/analyze.js --file=logs/access.log --since=1h --format=json
+```
+
+Available options:
+
+- `--file=<filename>` - Specify log file to analyze (default: logs/access.log)
+- `--level=<level>` - Filter by log level (access, error, debug, info, warn)
+- `--requestId=<id>` - Filter by request ID
+- `--since=<time>` - Show logs since time (e.g., 1h, 30m, 1d)
+- `--errors` - Show only errors
+- `--slow=<ms>` - Show requests slower than specified ms
+- `--format=<format>` - Output format (json, table, pretty)
 
 ## Configuration
 
-The application can be configured using environment variables. Create a `.env.local` file in the project root or set environment variables directly.
+Logging behavior can be configured through environment variables:
 
-### Environment Variables
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| NEXT_PUBLIC_API_HOST | API server hostname | localhost |
-| NEXT_PUBLIC_API_PORT | API server port | 8002 |
-| ENABLE_DEBUG | Enable debug output | false |
-
-### Configuration Methods
-
-1. Using `.env.local` file:
-```env
-NEXT_PUBLIC_API_HOST=recipesanalysis.cloud
-NEXT_PUBLIC_API_PORT=44251
-ENABLE_DEBUG=true
-```
-
-2. Using command line:
-```bash
-# Windows (PowerShell)
-$env:NEXT_PUBLIC_API_HOST="recipesanalysis.cloud"; $env:NEXT_PUBLIC_API_PORT="44251"; npm run dev
-
-# Windows (CMD)
-set NEXT_PUBLIC_API_HOST=recipesanalysis.cloud && set NEXT_PUBLIC_API_PORT=44251 && npm run dev
-
-# Linux/Mac
-NEXT_PUBLIC_API_HOST=recipesanalysis.cloud NEXT_PUBLIC_API_PORT=44251 npm run dev
-```
-
-## Running the Application
-
-### Development Mode
-
-1. Basic development server:
-```bash
-npm run dev
-```
-
-2. With custom API endpoint:
-```bash
-NEXT_PUBLIC_API_HOST=recipesanalysis.cloud NEXT_PUBLIC_API_PORT=44251 npm run dev
-```
-
-3. With debug output enabled:
-```bash
-ENABLE_DEBUG=true npm run dev
-```
-
-4. With all options:
-```bash
-NEXT_PUBLIC_API_HOST=recipesanalysis.cloud NEXT_PUBLIC_API_PORT=44251 ENABLE_DEBUG=true npm run dev
-```
-
-### Production Mode
-
-1. Build the application:
-```bash
-npm run build
-```
-
-2. Start the production server:
-```bash
-npm start
-```
-
-3. With custom configuration:
-```bash
-NEXT_PUBLIC_API_HOST=recipesanalysis.cloud NEXT_PUBLIC_API_PORT=44251 npm start
-```
-
-## Development
-
-### Debug Mode
-
-Debug mode provides additional information in the UI and console logs. To enable:
-
-1. Using environment variable:
-```bash
-ENABLE_DEBUG=true npm run dev
-```
-
-2. For production:
-```bash
-ENABLE_DEBUG=true npm run build
-ENABLE_DEBUG=true npm start
-```
-
-### API Configuration Examples
-
-1. Local development API:
-```bash
-NEXT_PUBLIC_API_HOST=localhost NEXT_PUBLIC_API_PORT=8002 npm run dev
-```
-
-2. Production API:
-```bash
-NEXT_PUBLIC_API_HOST=recipesanalysis.cloud NEXT_PUBLIC_API_PORT=44251 npm run dev
-```
-
-### Common Configurations
-
-1. Local development setup:
-```bash
-NEXT_PUBLIC_API_HOST=localhost NEXT_PUBLIC_API_PORT=8002 ENABLE_DEBUG=true npm run dev
-```
-
-2. Production setup:
-```bash
-NEXT_PUBLIC_API_HOST=recipesanalysis.cloud NEXT_PUBLIC_API_PORT=44251 npm run build
-NEXT_PUBLIC_API_HOST=recipesanalysis.cloud NEXT_PUBLIC_API_PORT=44251 npm start
-```
-
-## Troubleshooting
-
-### Common Issues
-
-1. API Connection Failed
-```
-Error: Failed to fetch from API
-```
-Solution: Verify API host and port configuration:
-```bash
-# Test API connection
-curl http://$NEXT_PUBLIC_API_HOST:$NEXT_PUBLIC_API_PORT/health
-```
-
-2. Debug Output Not Showing
-```
-Debug information not visible
-```
-Solution: Ensure debug mode is enabled:
-```bash
-ENABLE_DEBUG=true npm run dev
-```
-
-### Checking Configuration
-
-To verify current configuration:
-
-1. With debug mode:
-```bash
-ENABLE_DEBUG=true npm run dev
-```
-Debug information will be visible in the UI.
-
-2. Check environment variables:
-```bash
-# Linux/Mac
-echo $NEXT_PUBLIC_API_HOST
-echo $NEXT_PUBLIC_API_PORT
-
-# Windows (PowerShell)
-echo $env:NEXT_PUBLIC_API_HOST
-echo $env:NEXT_PUBLIC_API_PORT
-```
-
-## Scripts
-
-- `npm run dev` - Start development server
-- `npm run build` - Build for production
-- `npm start` - Start production server
-- `npm run lint` - Run linter
-
-## Additional Notes
-
-- The application requires a running instance of the recipe analysis API
-- Debug mode is controlled server-side via ENABLE_DEBUG environment variable
-- API configuration can be changed without rebuilding the application
-- All configuration can be set via environment variables or .env files
+- `ENABLE_DEBUG=true` - Enable debug logging
+- `NODE_ENV=development` - Show logs in console as well as writing to files

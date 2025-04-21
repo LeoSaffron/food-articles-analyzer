@@ -1,0 +1,94 @@
+// ... existing imports
+import { logger } from '@/lib/logger'
+
+export default function Home() {
+  // ... existing state declarations
+
+  const analyzeRecipe = async (e: React.FormEvent) => {
+    e.preventDefault()
+    
+    logger.debug('Starting recipe analysis', { url })
+    
+    if (!url) {
+      logger.debug('Analysis cancelled - no URL provided')
+      toast({
+        title: "Error",
+        description: "Please enter a URL",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setLoading(true)
+    setProgress(0)
+    setResults(null)
+    setError(null)
+    setStatus("Starting analysis...")
+
+    const baseUrl = `http://${CONFIG.api.host}:${CONFIG.api.port}`
+    logger.debug('API Configuration', { baseUrl, url })
+
+    try {
+      // Stream Request
+      logger.debug('Initiating stream request')
+      const streamResponse = await fetch(`${baseUrl}/check_recipe_stream?url=${encodeURIComponent(url)}`)
+      logger.debug('Stream response received', { 
+        status: streamResponse.status,
+        statusText: streamResponse.statusText,
+        headers: Object.fromEntries(streamResponse.headers)
+      })
+      
+      if (!streamResponse.ok) {
+        throw new Error(`Stream request failed with status ${streamResponse.status}`)
+      }
+
+      const reader = streamResponse.body.getReader()
+      const decoder = new TextDecoder()
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) {
+          logger.debug('Stream completed')
+          break
+        }
+
+        const text = decoder.decode(value)
+        logger.debug('Stream chunk received', { text })
+        
+        // ... rest of the streaming logic
+      }
+
+      // Get final results
+      logger.debug('Requesting final results')
+      const resultResponse = await fetch(`${baseUrl}/check_recipe_result?url=${encodeURIComponent(url)}`)
+      
+      if (!resultResponse.ok) {
+        throw new Error(`Result request failed with status ${resultResponse.status}`)
+      }
+
+      const resultData = await resultResponse.json()
+      logger.debug('Results received', resultData)
+      
+      setResults(resultData)
+
+      toast({
+        title: "Success",
+        description: "Recipe analysis complete",
+      })
+    } catch (error) {
+      logger.error(error, { url, baseUrl })
+      setError(error)
+      
+      toast({
+        title: "Error",
+        description: "Failed to analyze recipe. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
+      logger.debug('Analysis process completed')
+    }
+  }
+
+  // ... rest of the component
+}

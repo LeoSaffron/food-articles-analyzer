@@ -1,0 +1,53 @@
+## Logging
+
+The application uses two types of logs:
+
+### Access Logs (`logs/access.log`)
+Contains detailed information about all requests including:
+- Timestamp
+- Client IP
+- Request method and URL
+- Status code
+- Query parameters
+- Request body (for POST requests)
+- User agent
+- Referer
+- Cookies
+- Headers
+- Geolocation (if available)
+
+### Debug Logs (`logs/debug.log`)
+Contains application debug information including:
+- API calls
+- Configuration details
+- Error details
+- Processing status
+- Performance metrics
+
+### Log Configuration
+
+Logs are stored in the `logs` directory:
+- Files are not executable (chmod 644)
+- Maximum file size: 5MB
+- Keeps last 5 files for each log type
+- Automatically rotates when size limit is reached
+
+### Viewing Logs
+
+1. Access logs:
+```bash
+tail -f logs/access.log
+```
+
+2. Debug logs:
+```bash
+tail -f logs/debug.log
+```
+
+3. In development mode, logs are also printed to the console.
+
+### Log Levels
+
+- ACCESS: Always logged
+- DEBUG: Only when ENABLE_DEBUG=true
+---

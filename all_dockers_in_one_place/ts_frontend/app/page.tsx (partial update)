@@ -1,0 +1,26 @@
+// ... other imports
+import { logger } from '@/lib/logger'
+
+// ... in your component
+const analyzeRecipe = async (e: React.FormEvent) => {
+  e.preventDefault()
+  
+  logger.debug('Starting recipe analysis', { url })
+  
+  if (!url) {
+    logger.debug('Analysis cancelled - no URL provided')
+    toast({
+      title: "Error",
+      description: "Please enter a URL",
+      variant: "destructive",
+    })
+    return
+  }
+
+  try {
+    // ... rest of your code
+  } catch (error) {
+    logger.error('Analysis failed', error as Error, { url })
+    // ... rest of error handling
+  }
+}

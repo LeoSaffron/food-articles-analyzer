@@ -1,0 +1,8 @@
+# ... existing entries
+
+# Logs
+/logs
+*.log
+
+# Environment
+.env*.local
