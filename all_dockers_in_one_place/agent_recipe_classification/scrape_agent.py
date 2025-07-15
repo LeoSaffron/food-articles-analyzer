@@ -16,6 +16,7 @@ from dotenv import load_dotenv
 import logging
 from time import sleep
 from fastapi.responses import StreamingResponse  # make sure this is imported
+from recipe_scrapers import scrape_me
 
 
 class RecipeScraper:
@@ -767,11 +768,11 @@ def is_valid_recipe(recipe_data):
     return (
             isinstance(recipe_data, dict)
             and "error" not in recipe_data
-            and "title" in recipe_data and recipe_data["title"].strip()
-            and "ingredients" in recipe_data and isinstance(recipe_data["ingredients"], list) and recipe_data[
-                "ingredients"]
-            and "instructions" in recipe_data and isinstance(recipe_data["instructions"], list) and recipe_data[
-                "instructions"]
+            and "title" in recipe_data and bool(recipe_data["title"].strip())
+            and "ingredients" in recipe_data and isinstance(recipe_data["ingredients"], list) and bool(recipe_data[
+                "ingredients"])
+            and "instructions" in recipe_data and isinstance(recipe_data["instructions"], list) and bool(recipe_data[
+                "instructions"])
     )
 
 
@@ -788,8 +789,26 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     scraper = RecipeScraper(args.url, model="meta-llama-3-8b-instruct", cache_dir="cache", verbose=0, debug=False)
-    recipe_data = scraper.get_recipe(args.url, debug=args.debug, verbose=args.verbose)
-    print('a1')
+
+    try:
+        logging.info("[INFO] Proceeding to Scrape recipe via recipe_scrapers")
+        rs = scrape_me(url)
+        recipe_data = {
+            "title": rs.title(),
+            "ingredients": rs.ingredients(),
+            "instructions": rs.instructions(),
+            "url_recipe": url
+        }
+        logging.info("[INFO] Scraped recipe via recipe_scrapers")
+        if is_valid_recipe(recipe_data):
+            collection.insert_one(recipe_data)
+            recipe = recipe_data
+        else:
+            raise ValueError("Invalid schema from recipe_scrapers")
+    except Exception as e:
+        logging.info(f"[INFO] recipe_scrapers failed ({e}), falling back to LLM-based scraper")
+        recipe_data = scraper.get_recipe(args.url, debug=args.debug, verbose=args.verbose)
+        print('a1')
 
     # if "error" not in recipe_data:
     #     scraper.save_to_mongodb(recipe_data)

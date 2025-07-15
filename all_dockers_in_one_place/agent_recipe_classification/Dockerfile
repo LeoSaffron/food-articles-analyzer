@@ -49,7 +49,8 @@ RUN pip install --no-cache-dir \
     beautifulsoup4 \
     ollama \
     unidecode \
-    playwright
+    playwright \
+    recipe-scrapers
 
 # Install Playwright browser binaries
 RUN playwright install --with-deps

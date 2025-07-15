@@ -17,6 +17,7 @@ from time import sleep
 from fastapi.responses import StreamingResponse
 from fastapi import FastAPI
 from collections import defaultdict
+from recipe_scrapers import scrape_me
 
 
 
@@ -325,11 +326,46 @@ def check_recipe(url, debug=True, log_callback=None):
 
         logging.info(f"[INFO] Scraping recipe from URL: {url}")
         print(f"[INFO] Scraping recipe from URL: {url}")
+        yield (f"[INFO] Scraping recipe from URL: {url}")
 
         # scraper = RecipeScraper(url)
         # scraped_recipe = scraper.get_recipe(url)
         scraper = RecipeScraper(url, mongo_uri=MONGO_URI, debug=debug, verbose=2 if debug else 0)
-        scraped_recipe = scraper.get_recipe(url, debug=debug, verbose=2 if debug else 0)
+        try:
+            logging.info("[INFO] Proceeding to Scrape recipe via recipe_scrapers")
+            yield "[INFO] Proceeding to Scrape recipe via recipe_scrapers"
+            rs = scrape_me(url)
+            scraped_recipe = {
+                "title": rs.title(),
+                "ingredients": rs.ingredients(),
+                "instructions": [rs.instructions()],
+                "url_recipe": url
+            }
+            logging.info("[INFO] Scraped recipe via recipe_scrapers")
+            yield "[INFO] Scraped recipe via recipe_scrapers\n"
+                # yield f"{scraped_recipe}\n"
+                #
+                # yield "\n"
+                # yield f'is_valid_recipe(scraped_recipe)         {is_valid_recipe(scraped_recipe)}       '
+                # yield f'isinstance(recipe_data, dict)             {isinstance(scraped_recipe, dict)}               '
+                # # yield f'"error" not in recipe_data{"error" not in scraped_recipe}'
+                # yield f'"title" in recipe_data and recipe_data["title"].strip()          {"title" in scraped_recipe and bool(scraped_recipe["title"].strip())}            '
+                # yield f'"ingredients" in recipe_data and isinstance(recipe_data["ingredients"], list) and recipe_data[ \
+                #     "ingredients"]            {"ingredients" in scraped_recipe}            '
+                # yield f'"instructions" in scraped_recipe and isinstance(scraped_recipe["instructions"], list) and scraped_recipe["instructions"]                   {"instructions" in scraped_recipe and isinstance([scraped_recipe["instructions"]], list) and bool(scraped_recipe["instructions"])}               '
+                # yield '                                       '
+                # yield f'{"ingredients" in scraped_recipe and isinstance(scraped_recipe["ingredients"], list) and bool(scraped_recipe["ingredients"])}'
+                # yield f'{"instructions" in scraped_recipe and isinstance(scraped_recipe["instructions"], list) and bool(scraped_recipe["instructions"])}'
+                # yield f'{isinstance(scraped_recipe["instructions"], list)}'
+
+            if is_valid_recipe(scraped_recipe):
+                collection.insert_one(scraped_recipe)
+                recipe = scraped_recipe
+            else:
+                raise ValueError("Invalid schema from recipe_scrapers")
+        except Exception as e:
+            yield "Could not scrape with dedicated library, proceeding with the agent"
+            scraped_recipe = scraper.get_recipe(url, debug=debug, verbose=2 if debug else 0)
 
         if is_valid_recipe(scraped_recipe):
             logging.info("[INFO] Scraped recipe is valid, saving to MongoDB")
@@ -458,13 +494,30 @@ def check_recipe_stream(url: str):
             #
             # def log_cb(msg):
             #     log_buffer.append(msg)
-
             scraper = RecipeScraper(url, mongo_uri=MONGO_URI, debug=True, verbose=2)
-            yield from scraper.get_recipe(url, debug=True, verbose=2, log_callback=log_callback)
-            recipe = scraper.result_get_recipe
+            try:
+                logging.info("[INFO] Proceeding to Scrape recipe via recipe_scrapers")
+                rs = scrape_me(url)
+                recipe_data = {
+                    "title": rs.title(),
+                    "ingredients": rs.ingredients(),
+                    "instructions": rs.instructions(),
+                    "url_recipe": url
+                }
+                logging.info("[INFO] Scraped recipe via recipe_scrapers")
+                if is_valid_recipe(recipe_data):
+                    collection.insert_one(recipe_data)
+                    recipe = recipe_data
+                else:
+                    raise ValueError("Invalid schema from recipe_scrapers")
+            except Exception as e:
+                yield from scraper.get_recipe(url, debug=True, verbose=2, log_callback=log_callback)
+                recipe = scraper.result_get_recipe
 
             # for msg in log_buffer:
             #     yield f"{msg}\n"
+
+
 
 
             if not is_valid_recipe(recipe):
