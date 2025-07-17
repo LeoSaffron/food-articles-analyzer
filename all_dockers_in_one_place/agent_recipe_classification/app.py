@@ -336,11 +336,15 @@ def check_recipe(url, debug=True, log_callback=None):
             yield "[INFO] Proceeding to Scrape recipe via recipe_scrapers"
             rs = scrape_me(url)
             scraped_recipe = {
+                "url_recipe": url,
                 "title": rs.title(),
                 "ingredients": rs.ingredients(),
-                "instructions": [rs.instructions()],
-                "url_recipe": url
+                "instructions": [rs.instructions()]
             }
+            yield "[INFO] Scraped main recipe parts via recipe_scrapers. proceeding with the rest\n"
+            for key in rs.to_json().keys():
+                if key not in scraped_recipe.keys():
+                    scraped_recipe[key] = rs.to_json()[key]
             logging.info("[INFO] Scraped recipe via recipe_scrapers")
             yield "[INFO] Scraped recipe via recipe_scrapers\n"
                 # yield f"{scraped_recipe}\n"
@@ -358,6 +362,8 @@ def check_recipe(url, debug=True, log_callback=None):
                 # yield f'{"instructions" in scraped_recipe and isinstance(scraped_recipe["instructions"], list) and bool(scraped_recipe["instructions"])}'
                 # yield f'{isinstance(scraped_recipe["instructions"], list)}'
 
+            yield f"    rs        {rs.to_json().keys()}        "
+
             if is_valid_recipe(scraped_recipe):
                 collection.insert_one(scraped_recipe)
                 recipe = scraped_recipe
@@ -365,13 +371,19 @@ def check_recipe(url, debug=True, log_callback=None):
                 raise ValueError("Invalid schema from recipe_scrapers")
         except Exception as e:
             yield "Could not scrape with dedicated library, proceeding with the agent"
-            scraped_recipe = scraper.get_recipe(url, debug=debug, verbose=2 if debug else 0)
+            # scraped_recipe =  scraper.get_recipe(url, debug=debug, verbose=2 if debug else 0)
+            yield from scraper.get_recipe(url, debug=debug, verbose=2 if debug else 0)
+            scraped_recipe = scraper.result_get_recipe
+            yield "   proceeding to check validity of the scraped recipe    "
+            # yield f'             scraped_recipe:  {scraped_recipe}                '
 
         if is_valid_recipe(scraped_recipe):
+            yield "    recipe is valid. Writing to mongodb    "
             logging.info("[INFO] Scraped recipe is valid, saving to MongoDB")
             scraper.save_to_mongodb(scraped_recipe)
             recipe = scraped_recipe
         else:
+            yield "[WARN] Scraped recipe is invalid:"
             logging.warning("[WARN] Scraped recipe is invalid:")
             logging.warning(scraped_recipe)  # ← This will print the failed payload
             return {"error": "Recipe not found and could not be scraped."}
