@@ -50,7 +50,11 @@ RUN pip install --no-cache-dir \
     ollama \
     unidecode \
     playwright \
-    recipe-scrapers
+    recipe-scrapers \
+    quantulum3 \
+    pint \
+    parse-ingredients \
+    ingreedypy
 
 # Install Playwright browser binaries
 RUN playwright install --with-deps
@@ -59,4 +63,5 @@ RUN playwright install --with-deps
 EXPOSE 8002
 
 # Command to run the application
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8002", "--log-level", "debug"]
+#CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8002", "--log-level", "debug"]
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8002", "--reload"]

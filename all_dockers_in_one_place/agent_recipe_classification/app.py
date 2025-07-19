@@ -18,6 +18,11 @@ from fastapi.responses import StreamingResponse
 from fastapi import FastAPI
 from collections import defaultdict
 from recipe_scrapers import scrape_me
+# from chefparse import Chef
+from parse_ingredients import parse_ingredient
+import dataclasses
+from collections import namedtuple
+from ingreedypy import Ingreedy
 
 
 
@@ -308,6 +313,8 @@ def query_llm(ingredient, debug=False, verbose=0):
     return llm_response
 
 
+
+
 # 🔹 Check if a recipe is plant-based
 def check_recipe(url, debug=True, log_callback=None):
 
@@ -332,7 +339,7 @@ def check_recipe(url, debug=True, log_callback=None):
         # scraped_recipe = scraper.get_recipe(url)
         scraper = RecipeScraper(url, mongo_uri=MONGO_URI, debug=debug, verbose=2 if debug else 0)
         try:
-            logging.info("[INFO] Proceeding to Scrape recipe via recipe_scrapers")
+            logging.info("[INFO] Proceeding to Scrape recipe via a dedicated library")
             yield "[INFO] Proceeding to Scrape recipe via recipe_scrapers"
             rs = scrape_me(url)
             scraped_recipe = {
@@ -341,7 +348,7 @@ def check_recipe(url, debug=True, log_callback=None):
                 "ingredients": rs.ingredients(),
                 "instructions": [rs.instructions()]
             }
-            yield "[INFO] Scraped main recipe parts via recipe_scrapers. proceeding with the rest\n"
+            # yield "[INFO] Scraped main recipe parts via a dedicated library. proceeding with the rest\n"
             for key in rs.to_json().keys():
                 if key not in scraped_recipe.keys():
                     scraped_recipe[key] = rs.to_json()[key]
@@ -362,7 +369,7 @@ def check_recipe(url, debug=True, log_callback=None):
                 # yield f'{"instructions" in scraped_recipe and isinstance(scraped_recipe["instructions"], list) and bool(scraped_recipe["instructions"])}'
                 # yield f'{isinstance(scraped_recipe["instructions"], list)}'
 
-            yield f"    rs        {rs.to_json().keys()}        "
+            # yield f"    rs        {rs.to_json().keys()}        "
 
             if is_valid_recipe(scraped_recipe):
                 collection.insert_one(scraped_recipe)
@@ -486,7 +493,7 @@ result_cache = {}
 from fastapi.responses import StreamingResponse
 
 @app.get("/check_recipe_stream")
-def check_recipe_stream(url: str):
+def check_recipe_stream(url: str, debug=True):
     def event_stream():
         yield_msgs = []
         def log_callback(msg):
@@ -509,21 +516,118 @@ def check_recipe_stream(url: str):
             scraper = RecipeScraper(url, mongo_uri=MONGO_URI, debug=True, verbose=2)
             try:
                 logging.info("[INFO] Proceeding to Scrape recipe via recipe_scrapers")
+                yield "[INFO] Proceeding to Scrape recipe via a dedicated library\n"
                 rs = scrape_me(url)
-                recipe_data = {
+                yield "[INFO] Parsing ingredients\n"
+                # yield f'rs.ingredients(): {rs.ingredients()}\n'
+                # yield f'type(rs.ingredients()): {type(rs.ingredients())}\n'
+                logging.info("Parsing ingredients")
+                ingredients_pre_parsed = rs.ingredients()
+                ingredients_list_dict = []
+                for ingredient in ingredients_pre_parsed:
+                    try:
+                        # yield "entering loop\n"
+                        # yield f"ingredient: {ingredient}\n"
+                        ingredient_parsed = parse_ingredient(ingredient)
+                        # yield f"initial parse complete for: {ingredient}\n"
+                        dict_ingredient = {}
+                        dict_ingredient['name'] = ingredient_parsed.name
+                        # yield "Parsed name\n"
+                        try:
+                            dict_ingredient['quantity'] = ingredient_parsed.quantity
+                        except:
+                            pass
+                        # yield "Parsed quantity"
+                        try:
+                            dict_ingredient['unit'] = ingredient_parsed.unit
+                        except:
+                            pass
+                        # yield "Parsed unit"
+                        try:
+                            dict_ingredient['comment'] = ingredient_parsed.comment
+                        except:
+                            pass
+                        # yield "Parsed comment"
+                        try:
+                            dict_ingredient['original_string'] = ingredient_parsed.original_string
+                        except:
+                            pass
+                        # yield "Parsed original_string"
+                        ingredients_list_dict.append(dict_ingredient)
+                    except:
+                        try:
+                            dict_ingredient = Ingreedy().parse(ingredient)
+                            ingredients_list_dict.append(dict_ingredient)
+                        except:
+                            ingredients_list_dict.append(ingredient)
+
+                # ingredient_parsed = parse_ingredient(ingredients_pre_parsed)
+                # yield "Creating ingredients dict\n"
+                # logging.info("Creating ingredients dict")
+                # dict_ingredient = {}
+                # dict_ingredient['name'] = ingredient_parsed.name
+                # yield "Parsed name\n"
+                # try:
+                #     dict_ingredient['quantity'] = ingredient_parsed.quantity
+                # except:
+                #     pass
+                # yield "Parsed quantity"
+                # try:
+                #     dict_ingredient['unit'] = ingredient_parsed.unit
+                # except:
+                #     pass
+                # yield "Parsed unit"
+                # try:
+                #     dict_ingredient['comment'] = ingredient_parsed.comment
+                # except:
+                #     pass
+                # yield "Parsed comment"
+                # try:
+                #     dict_ingredient['original_string'] = ingredient_parsed.original_string
+                # except:
+                #     pass
+                # yield "Parsed original_string"
+                scraped_recipe = {
+                    "url_recipe": url,
                     "title": rs.title(),
-                    "ingredients": rs.ingredients(),
-                    "instructions": rs.instructions(),
-                    "url_recipe": url
+                    # "ingredients": rs.ingredients(),
+                    "ingredients": ingredients_list_dict,
+                    "instructions": [rs.instructions()]
                 }
+                # yield "[INFO] Scraped main recipe parts via a dedicated library. proceeding with the rest\n"
+                for key in rs.to_json().keys():
+                    if key not in scraped_recipe.keys():
+                        scraped_recipe[key] = rs.to_json()[key]
                 logging.info("[INFO] Scraped recipe via recipe_scrapers")
-                if is_valid_recipe(recipe_data):
-                    collection.insert_one(recipe_data)
-                    recipe = recipe_data
+                yield "[INFO] Completed scraping the recipe via a dedicated library\n"
+                # yield f"{scraped_recipe}\n"
+                #
+                # yield "\n"
+                # yield f'is_valid_recipe(scraped_recipe)         {is_valid_recipe(scraped_recipe)}       '
+                # yield f'isinstance(recipe_data, dict)             {isinstance(scraped_recipe, dict)}               '
+                # # yield f'"error" not in recipe_data{"error" not in scraped_recipe}'
+                # yield f'"title" in recipe_data and recipe_data["title"].strip()          {"title" in scraped_recipe and bool(scraped_recipe["title"].strip())}            '
+                # yield f'"ingredients" in recipe_data and isinstance(recipe_data["ingredients"], list) and recipe_data[ \
+                #     "ingredients"]            {"ingredients" in scraped_recipe}            '
+                # yield f'"instructions" in scraped_recipe and isinstance(scraped_recipe["instructions"], list) and scraped_recipe["instructions"]                   {"instructions" in scraped_recipe and isinstance([scraped_recipe["instructions"]], list) and bool(scraped_recipe["instructions"])}               '
+                # yield '                                       '
+                # yield f'{"ingredients" in scraped_recipe and isinstance(scraped_recipe["ingredients"], list) and bool(scraped_recipe["ingredients"])}'
+                # yield f'{"instructions" in scraped_recipe and isinstance(scraped_recipe["instructions"], list) and bool(scraped_recipe["instructions"])}'
+                # yield f'{isinstance(scraped_recipe["instructions"], list)}'
+
+                # yield f"    rs        {rs.to_json().keys()}        "
+
+                if is_valid_recipe(scraped_recipe):
+                    collection.insert_one(scraped_recipe)
+                    recipe = scraped_recipe
                 else:
                     raise ValueError("Invalid schema from recipe_scrapers")
             except Exception as e:
-                yield from scraper.get_recipe(url, debug=True, verbose=2, log_callback=log_callback)
+                yield f'{e}\n'
+                yield "Could not scrape with a dedicated library, proceeding with the agent"
+                # scraped_recipe =  scraper.get_recipe(url, debug=debug, verbose=2 if debug else 0)
+                yield from scraper.get_recipe(url, debug=debug, verbose=2 if debug else 0)
+
                 recipe = scraper.result_get_recipe
 
             # for msg in log_buffer:
