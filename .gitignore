@@ -1,3 +1,7 @@
 /all_dockers_in_one_place/agent_recipe_classification/cache/
 all_dockers_in_one_place/ts_frontend/node_modules/
+all_dockers_in_one_place/ts_frontend/.next/
+all_dockers_in_one_place/agent_recipe_classification/__pycache__/
+all_dockers_in_one_place/agent_recipe_classification/.idea/
+all_dockers_in_one_place/agent_recipe_classification/cached_page*.html
 *.log
