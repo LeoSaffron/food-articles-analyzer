@@ -23,8 +23,7 @@ from parse_ingredients import parse_ingredient
 import dataclasses
 from collections import namedtuple
 from ingreedypy import Ingreedy
-
-
+from fastapi.responses import StreamingResponse
 
 from scrape_agent import RecipeScraper, is_valid_recipe
 
@@ -147,28 +146,6 @@ def validate_ingredient(ingredient):
     response = requests.post(url, json=payload)
     return response.json()["response"].strip().lower() == "yes"
 
-# 🔹 Extract a clean list of valid ingredients
-# def extract_ingredients(recipe):
-#     def extract_name_only(item):
-#         if isinstance(item, dict):
-#             # Prefer structured 'name' field
-#             return item.get("name", "").strip()
-#
-#         elif isinstance(item, list):
-#             # Heuristic: assume the last element is the name (e.g., ["2 cups", "flour"])
-#             return str(item[-1]).strip() if item else None
-#
-#         elif isinstance(item, str):
-#             return item.strip()
-#
-#         return None
-#
-#     raw_items = recipe.get("ingredients", [])
-#     extracted = [extract_name_only(i) for i in raw_items if extract_name_only(i)]
-#
-#     # Basic cleanup — skip empty or junk strings
-#     return [ing for ing in extracted if is_potential_ingredient(ing)]
-
 def extract_ingredients(recipe):
     def flatten(items):
         for i in items:
@@ -245,18 +222,6 @@ def is_potential_ingredient(text):
         "dough base", "batter", "glaze", "optional"
     }
     return not any(text == b for b in banned) and len(text) > 2
-
-
-# 🔹 Extract a clean list of valid ingredients
-# def extract_ingredients(recipe):
-#     raw_ingredients = [ing[1] for ing in recipe.get("ingredients", [])]
-#
-#     # Apply regex-based filtering first
-#     potential_ingredients = [ing for ing in raw_ingredients if is_potential_ingredient(ing)]
-#
-#     # Apply LLM-based validation
-#     return [ing for ing in potential_ingredients if validate_ingredient(ing)]
-
 
 # 🔹 Query self-hosted Llama 3 (via Ollama) for ingredient classification
 def query_llm(ingredient, debug=False, verbose=0):
@@ -417,80 +382,9 @@ def check_recipe(url, debug=True, log_callback=None):
         "ingredient_results": plant_based_results
     }
 
-# def check_recipe_streaming(url: str):
-#     yield f"[INFO] Checking recipe URL: {url}"
-#     yield "[INFO] Looking up in database..."
-#     yield "[INFO] Not found. Scraping..."
-#     yield "[INFO] Running analysis..."
-#     yield "[INFO] Finished!"
-
 # Global in-memory result cache
 result_cache = {}
 
-# def check_recipe_streaming(url, debug=True):
-#     def log(msg):
-#         logging.info(msg)
-#         yield msg + '\n'
-#
-#     # Check DB first
-#     recipe = get_recipe_by_url(url)
-#     if not recipe:
-#         yield from log(f"[INFO] Recipe not found in database: {url}")
-#         yield from log(f"[INFO] Scraping recipe from URL: {url}")
-#
-#         scraper = RecipeScraper(url, mongo_uri=MONGO_URI, debug=debug, verbose=2 if debug else 0)
-#         scraped_recipe = scraper.get_recipe(url, debug=debug, verbose=2 if debug else 0)
-#
-#         if is_valid_recipe(scraped_recipe):
-#             yield from log("[INFO] Scraped recipe is valid, saving to MongoDB")
-#             scraper.save_to_mongodb(scraped_recipe)
-#             recipe = scraped_recipe
-#         else:
-#             yield from log("[WARN] Scraped recipe is invalid.")
-#             yield from log(str(scraped_recipe))
-#             result_cache[url] = {"error": "Recipe not found and could not be scraped."}
-#             return
-#
-#     else:
-#         yield from log(f"[INFO] Recipe found in database for URL: {url}")
-#
-#     yield from log("[INFO] Extracting ingredients and running analysis...")
-#
-#     ingredients = extract_ingredients(recipe)
-#     plant_based_results = {ing: query_llm(ing) for ing in ingredients}
-#
-#     all_plant_based = all(result in [
-#         "Always Plant-Based",
-#         "Usually Plant-Based",
-#         "Check for Vegan Version"
-#     ] for result in plant_based_results.values())
-#
-#     final_result = {
-#         "title": recipe.get("title", "Unknown Recipe"),
-#         "url": recipe.get("url_recipe", url),
-#         "plant_based": all_plant_based,
-#         "ingredient_results": plant_based_results
-#     }
-#
-#     # ✅ Save to cache
-#     result_cache[url] = final_result
-#     yield from log("[INFO] Finished analysis.")
-#
-# @app.get("/check_recipe_stream")
-# async def stream_logs(url: str):
-#     def log_generator():
-#         yield "Starting analysis for URL: " + url + "\n"
-#         result = None
-#
-#         # Replace check_recipe with a generator version or yield steps manually
-#         for line in check_recipe_streaming(url):  # <-- You need to define this generator
-#             yield line + "\n"
-#
-#         yield "[Log stream ended]\n"
-#
-#     return StreamingResponse(log_generator(), media_type="text/plain")
-
-from fastapi.responses import StreamingResponse
 
 @app.get("/check_recipe_stream")
 def check_recipe_stream(url: str, debug=True):
@@ -504,15 +398,7 @@ def check_recipe_stream(url: str, debug=True):
 
         if not recipe:
             yield "[INFO] Recipe not found in DB, scraping...\n"
-            # scraper = RecipeScraper(url, mongo_uri=MONGO_URI, debug=True, verbose=2)
-            # for msg in scraper.get_recipe(url, debug=True, verbose=2, log_callback=log_callback):
-            #     yield msg + "\n"
-            # # recipe = scraper.get_recipe(url)
-            #
-            # log_buffer = []
-            #
-            # def log_cb(msg):
-            #     log_buffer.append(msg)
+
             scraper = RecipeScraper(url, mongo_uri=MONGO_URI, debug=True, verbose=2)
             try:
                 logging.info("[INFO] Proceeding to Scrape recipe via recipe_scrapers")
@@ -633,9 +519,6 @@ def check_recipe_stream(url: str, debug=True):
             # for msg in log_buffer:
             #     yield f"{msg}\n"
 
-
-
-
             if not is_valid_recipe(recipe):
                 yield "[ERROR] Invalid recipe, aborting.\n"
                 return
@@ -658,54 +541,12 @@ def check_recipe_stream(url: str, debug=True):
             ] for r in result_map.values()),
             "ingredient_results": result_map
         }
-        # sleep(2)
-        # yield "test 1\n"
-        # sleep(2)
-        # yield "test 2\n"
-        # sleep(2)
-        # yield "test 3\n"
-        # sleep(2)
-        # yield "test 4\n"
     return StreamingResponse(event_stream(), media_type="text/plain")
-
-
-
-
-
-
-# def stream_logs_endpoint(url: str):
-#     def event_stream():
-#         yield "Starting log stream...\n"
-#
-#         def send(line):
-#             # This gets called with each log line
-#             yield_line = line if line.endswith("\n") else line + "\n"
-#             yield yield_line
-#
-#         buffer = []
-#
-#         def log_to_buffer(message):
-#             buffer.append(message + "\n")
-#
-#         result = check_recipe(url, debug=True, log_callback=log_to_buffer)
-#
-#         for line in buffer:
-#             yield line
-#             sleep(0.1)  # slight delay for smoother UI updates
-#
-#         yield "[Log stream ended]\n"
-#
-#     return StreamingResponse(event_stream(), media_type="text/plain")
 
 # 🔹 API Endpoint: Check if a recipe is plant-based
 @app.get("/check_recipe")
 def check_recipe_endpoint(url: str):
     return check_recipe(url)
-
-# @app.get("/check_recipe_result")
-# def check_recipe_result(url: str):
-#     result = check_recipe(url, debug=False, log_callback=None)
-#     return result
 
 @app.get("/check_recipe_result")
 def get_recipe_result(url: str):
@@ -713,42 +554,6 @@ def get_recipe_result(url: str):
     if not result:
         return {"error": "No result available for this URL. Please run analysis first."}
     return result
-
-# @app.get("/stream_logs")
-# async def stream_logs(url: str):
-#     async def log_generator():
-#         from io import StringIO
-#         import sys
-#
-#         buffer = StringIO()
-#         handler = logging.StreamHandler(buffer)
-#         handler.setLevel(logging.INFO)
-#
-#         logger = logging.getLogger("uvicorn.error")
-#         logger.addHandler(handler)
-#
-#         # Run recipe check in background
-#         loop = asyncio.get_event_loop()
-#         result_future = loop.run_in_executor(None, check_recipe, url)
-#
-#         last_pos = 0
-#         while not result_future.done():
-#             await asyncio.sleep(0.5)
-#             buffer.seek(last_pos)
-#             chunk = buffer.read()
-#             last_pos = buffer.tell()
-#             if chunk:
-#                 yield f"data: {chunk.strip()}\n\n"
-#
-#         # Final logs
-#         buffer.seek(last_pos)
-#         chunk = buffer.read()
-#         if chunk:
-#             yield f"data: {chunk.strip()}\n\n"
-#
-#         logger.removeHandler(handler)
-#
-#     return StreamingResponse(log_generator(), media_type="text/event-stream")
 
 async def stream_logs(url: str):
     def log_generator():
