@@ -439,42 +439,6 @@ class RecipeScraper:
             print("\n[DEBUG] Final prompt sent to LLM:\n")
             print(prompt)
 
-        # response = ollama.chat(
-        #     model="llama3:8B",
-        #     messages=[{"role": "user", "content": prompt}],
-        #     options={"temperature": 0}  # Set model temperature to 0 for consistency
-        # )
-        # response = ollama.chat(
-        #     model="meta-llama-3-8b-instruct",  # Change to your exact model
-        #     # model="tulu-supernova",
-        #     messages=[
-        #         {
-        #             "role": "system",
-        #             "content": """
-        #             You are a structured data extraction assistant. Always return valid JSON.
-        #
-        #             **IMPORTANT RULES**:
-        #             - **DO NOT** return `"recipe": {}`. Just return JSON directly.
-        #            # - **DO NOT** use `"name"`. Use `"title"` instead.
-        #             - **DO NOT** add extra text like "Here is the extracted JSON".
-        #             - **Ensure `"quantity"` is separated from `"unit"`** (e.g., `"4 oz"` → `"quantity": 4, "unit": "oz"`).
-        #             - **break down amounts when both numerical values and units of measurement are present** (e.g., `"prep_time" : "15 minutes"` → `"prep_time": {"value" : 15, "unit": "minutes"}`).
-        #             - **Put every numerical value that contains text in "" (e.g., instead of `15 hours`, return `"15 hours"`).**
-        #             - **If an ingredient has no `"quantity"` or `"unit"`, remove those keys.**
-        #             - **DO NOT** include Markdown formatting (` ```json ` or backticks).
-        #             - **If the title is missing, return `"title": "Unknown Recipe"` instead of an empty string.**
-        #             - **Return only valid JSON. No extra text, no code blocks, no explanations.**
-        #             - **DO NOT use `...` or ellipsis — always return full lists (e.g., all steps and ingredients).**
-        #             - AVOID TRUNCATING DATA
-        #             - always preserve name of the ingredient
-        #             """
-        #         },
-        #         {"role": "user", "content": prompt}  # Your actual query
-        #     ],
-        #     options={"temperature": 0},  # Keep deterministic
-        #     base_url=self.LLM_API_URL
-        # )
-
         # 🧠 Construct Ollama /api/chat payload
         payload = {
             "model": "meta-llama-3-8b-instruct",
@@ -570,29 +534,6 @@ class RecipeScraper:
         if debug or verbose >= 2:
             print("\n[DEBUG] Final prompt sent to LLM:\n")
             print(prompt)
-
-        # response = ollama.chat(
-        #     # model="llama3:8B",  # Change to your exact model
-        #     model="meta-llama-3-8b-instruct",  # Change to your exact model
-        #     # model="tulu-supernova",  # Change to your exact model
-        #     messages=[
-        #         {
-        #             "role": "system",
-        #             "content": """
-        #             You are a structured data extraction assistant. Always return valid JSON.
-        #             return structured json.
-        #             Do not change any data, just the structure.
-        #             **DO NOT use `...` or ellipsis — always return full lists (e.g., all steps and ingredients).**
-        #             make sure the output is 100% compatible with json syntax
-        #             do not add quotation marks inside of a quotation
-        #             do not break the json syntax
-        #             """
-        #         },
-        #         {"role": "user", "content": prompt}  # Your actual query
-        #     ],
-        #     options={"temperature": 0},  # Keep deterministic
-        #     base_url=self.LLM_API_URL
-        # )
 
         payload = {
             "model": "meta-llama-3-8b-instruct",
