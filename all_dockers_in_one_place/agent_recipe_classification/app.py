@@ -342,9 +342,11 @@ def check_recipe(url, debug=True, log_callback=None):
             else:
                 raise ValueError("Invalid schema from recipe_scrapers")
         except Exception as e:
-            yield "Could not scrape with dedicated library, proceeding with the agent"
+            yield "Could not scrape with dedicated library, proceeding with the agent\n"
+            yield "[META] LOADING_TYPE=LONG_WAIT|UI_ACTION=SHOW_SPINNER|DEV_MESSAGE=Starting LLM-based recipe scraping - this process can take 5-10 minutes as it requires AI analysis of the webpage content\n"
             # scraped_recipe =  scraper.get_recipe(url, debug=debug, verbose=2 if debug else 0)
             yield from scraper.get_recipe(url, debug=debug, verbose=2 if debug else 0)
+            yield "[META] LOADING_TYPE=COMPLETE|UI_ACTION=HIDE_SPINNER|DEV_MESSAGE=LLM-based recipe scraping completed successfully\n"
             scraped_recipe = scraper.result_get_recipe
             yield "   proceeding to check validity of the scraped recipe    "
             # yield f'             scraped_recipe:  {scraped_recipe}                '
@@ -367,7 +369,9 @@ def check_recipe(url, debug=True, log_callback=None):
         log(f"[INFO] Recipe found in database for URL: {url}")
 
     ingredients = extract_ingredients(recipe)
+    yield "[META] LOADING_TYPE=SHORT_WAIT|UI_ACTION=SHOW_PROGRESS_DOTS|DEV_MESSAGE=Running LLM analysis on each ingredient for plant-based classification - typically takes 30-60 seconds depending on ingredient count\n"
     plant_based_results = {ing: query_llm(ing) for ing in ingredients}
+    yield "[META] LOADING_TYPE=COMPLETE|UI_ACTION=HIDE_PROGRESS_DOTS|DEV_MESSAGE=Ingredient analysis completed successfully\n"
 
     all_plant_based = all(result in [
         "Always Plant-Based",
@@ -510,9 +514,11 @@ def check_recipe_stream(url: str, debug=True):
                     raise ValueError("Invalid schema from recipe_scrapers")
             except Exception as e:
                 yield f'{e}\n'
-                yield "Could not scrape with a dedicated library, proceeding with the agent"
+                yield "[INFO] Could not scrape with a dedicated library, proceeding with the agent\n"
+                yield "[META] LOADING_TYPE=LONG_WAIT|UI_ACTION=SHOW_SPINNER|DEV_MESSAGE=Starting LLM-based recipe scraping - this process can take 5-10 minutes as it requires AI analysis of the webpage content\n"
                 # scraped_recipe =  scraper.get_recipe(url, debug=debug, verbose=2 if debug else 0)
                 yield from scraper.get_recipe(url, debug=debug, verbose=2 if debug else 0)
+                yield "[META] LOADING_TYPE=COMPLETE|UI_ACTION=HIDE_SPINNER|DEV_MESSAGE=LLM-based recipe scraping completed successfully\n"
 
                 recipe = scraper.result_get_recipe
 
@@ -529,7 +535,9 @@ def check_recipe_stream(url: str, debug=True):
         yield "[INFO] Extracting ingredients...\n"
         ingredients = extract_ingredients(recipe)
         yield "[INFO] Successfully Extracted ingredient list. Analyzing each ingredient...\n"
+        yield "[META] LOADING_TYPE=SHORT_WAIT|UI_ACTION=SHOW_PROGRESS_DOTS|DEV_MESSAGE=Running LLM analysis on each ingredient for plant-based classification - typically takes 30-60 seconds depending on ingredient count\n"
         result_map = {ing: query_llm(ing) for ing in ingredients}
+        yield "[META] LOADING_TYPE=COMPLETE|UI_ACTION=HIDE_PROGRESS_DOTS|DEV_MESSAGE=Ingredient analysis completed successfully\n"
 
         yield "[INFO] Finished analysis.\n"
 

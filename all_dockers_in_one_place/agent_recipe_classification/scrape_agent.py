@@ -22,7 +22,7 @@ from recipe_scrapers import scrape_me
 class RecipeScraper:
     def __init__(self, url, model="llama3:8B", cache_dir="cache",
                  mongo_uri="mongodb://localhost:27017/", mongo_db="foodiesc", mongo_collection="recipes_tasty_co",
-                 verbose=0, debug=False):
+                 verbose=0, debug=False, use_structured_scraping=True):
         self.url = url
         self.model = model
         self.cache_dir = cache_dir
@@ -33,6 +33,7 @@ class RecipeScraper:
         self.collection = self.client[mongo_db][mongo_collection]
         self.verbose = verbose
         self.debug = debug
+        self.use_structured_scraping = use_structured_scraping
         self.LLM_API_URL = os.getenv("LLM_API_URL", "http://localhost:11434")
         self.LLM_API_URL = "http://host.docker.internal:11434/api/chat"
         self.result_initial_parse_with_llm = None
@@ -199,6 +200,354 @@ class RecipeScraper:
             print(f"[INFO] Extracted {len(raw_text)} characters from HTML")
 
         return raw_text, None
+
+    def extract_recipe_from_jsonld(self, data):
+        """
+        Recursively extract Recipe objects from complex JSON-LD structures
+        """
+        if isinstance(data, dict):
+            # Check if this is a Recipe object
+            if data.get('@type') == 'Recipe':
+                return data
+            
+            # Check for Recipe in @graph arrays
+            if '@graph' in data and isinstance(data['@graph'], list):
+                for item in data['@graph']:
+                    if isinstance(item, dict) and item.get('@type') == 'Recipe':
+                        return item
+            
+            # Recursively search in all values
+            for value in data.values():
+                result = self.extract_recipe_from_jsonld(value)
+                if result:
+                    return result
+        
+        elif isinstance(data, list):
+            # Search through list items
+            for item in data:
+                result = self.extract_recipe_from_jsonld(item)
+                if result:
+                    return result
+        
+        return None
+
+    def parse_instructions(self, instructions_data):
+        """
+        Parse complex instruction structures including HowToSection
+        """
+        if not instructions_data:
+            return []
+        
+        instructions = []
+        
+        for item in instructions_data:
+            if isinstance(item, dict):
+                if item.get('@type') == 'HowToStep':
+                    # Simple step
+                    text = item.get('text', '')
+                    if text:
+                        instructions.append(text)
+                
+                elif item.get('@type') == 'HowToSection':
+                    # Section with multiple steps
+                    section_name = item.get('name', '')
+                    if section_name:
+                        instructions.append(f"## {section_name}")
+                    
+                    steps = item.get('itemListElement', [])
+                    for step in steps:
+                        if isinstance(step, dict) and step.get('@type') == 'HowToStep':
+                            text = step.get('text', '')
+                            if text:
+                                instructions.append(text)
+                
+                elif 'text' in item:
+                    # Direct text instruction
+                    instructions.append(item['text'])
+            
+            elif isinstance(item, str):
+                # Simple string instruction
+                instructions.append(item)
+        
+        return instructions
+
+    def scrape_webpage_structured(self, url, verbose=0, cache_dir="cache"):
+        """
+        Scrapes webpage and returns structured recipe data by extracting relevant content
+        and filtering out non-recipe elements like navigation, ads, etc.
+        """
+        os.makedirs(cache_dir, exist_ok=True)
+        url_hash = hashlib.md5(url.encode()).hexdigest()
+        cache_file = os.path.join(cache_dir, f"{url_hash}.html")
+
+        if os.path.exists(cache_file):
+            if verbose >= 1:
+                print(f"[INFO] Using cached HTML from: {cache_file}")
+            with open(cache_file, "r", encoding="utf-8") as f:
+                html_content = f.read()
+        else:
+            try:
+                with sync_playwright() as p:
+                    browser = p.chromium.launch(headless=True)
+                    context = browser.new_context()
+                    page = context.new_page()
+                    page.goto(url, timeout=60000)
+                    page.wait_for_load_state("domcontentloaded")
+
+                    cookies = context.cookies()
+                    ua = page.evaluate("() => navigator.userAgent")
+                    browser.close()
+
+                    cookie_header = '; '.join(f"{c['name']}={c['value']}" for c in cookies)
+                    headers = {
+                        "User-Agent": ua,
+                        "Cookie": cookie_header,
+                        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+                    }
+
+                    if verbose >= 2:
+                        print(f"[DEBUG] Headers used in requests:\n{headers}")
+
+                    response = requests.get(url, headers=headers)
+
+                    if response.status_code != 200:
+                        return None, f"Error: Failed to fetch page (Status Code: {response.status_code})"
+
+                    html_content = response.text
+
+                    with open(cache_file, "w", encoding="utf-8") as f:
+                        f.write(html_content)
+            except Exception as e:
+                return None, f"Error: Failed to fetch page with Playwright + requests: {e}"
+
+        soup = BeautifulSoup(html_content, "html.parser")
+        
+        # Remove irrelevant elements that clutter recipe content
+        irrelevant_selectors = [
+            'nav', 'header', 'footer', 'aside', 'script', 'style', 'noscript',
+            '.navigation', '.nav', '.menu', '.sidebar', '.advertisement', '.ad',
+            '.social', '.share', '.comments', '.comment', '.related', '.popup',
+            '.modal', '.newsletter', '.subscribe', '.banner', '.cookie',
+            '[class*="ad"]', '[id*="ad"]', '[class*="social"]', '[class*="share"]',
+            '[class*="newsletter"]', '[class*="subscribe"]', '[class*="popup"]',
+            '[class*="modal"]', '[class*="cookie"]', '[class*="banner"]'
+        ]
+        
+        for selector in irrelevant_selectors:
+            for element in soup.select(selector):
+                element.decompose()
+
+        # Initialize recipe data with improved structure
+        recipe_data = {
+            "title": "",
+            "description": "",
+            "ingredients": [],
+            "instructions": [],
+            "prep_time": "",
+            "cook_time": "",
+            "total_time": "",
+            "servings": "",
+            "nutrition": {},
+            "categories": [],
+            "author": "",
+            "date_published": "",
+            "main_content": ""
+        }
+
+        # Parse ALL JSON-LD scripts with improved parsing
+        json_scripts = soup.find_all('script', type='application/ld+json')
+        recipe_found = False
+        
+        for script in json_scripts:
+            if not script.string:
+                continue
+                
+            try:
+                # Clean the JSON string
+                json_text = script.string.strip()
+                data = json.loads(json_text)
+                
+                # Extract recipe from complex structures
+                recipe = self.extract_recipe_from_jsonld(data)
+                
+                if recipe:
+                    if verbose >= 1:
+                        print("[INFO] Found JSON-LD Recipe data!")
+                    
+                    # Extract basic info
+                    recipe_data["title"] = recipe.get('name', '')
+                    recipe_data["description"] = recipe.get('description', '')
+                    
+                    # Extract author
+                    author_info = recipe.get('author', {})
+                    if isinstance(author_info, dict):
+                        recipe_data["author"] = author_info.get('name', '')
+                    elif isinstance(author_info, str):
+                        recipe_data["author"] = author_info
+                    
+                    # Extract dates
+                    recipe_data["date_published"] = recipe.get('datePublished', '')
+                    
+                    # Extract ingredients
+                    ingredients = recipe.get('recipeIngredient', [])
+                    if ingredients:
+                        recipe_data["ingredients"] = ingredients
+                    
+                    # Extract instructions with improved parsing
+                    instructions_raw = recipe.get('recipeInstructions', [])
+                    if instructions_raw:
+                        recipe_data["instructions"] = self.parse_instructions(instructions_raw)
+                    
+                    # Extract timing
+                    recipe_data["prep_time"] = recipe.get('prepTime', '')
+                    recipe_data["cook_time"] = recipe.get('cookTime', '')
+                    recipe_data["total_time"] = recipe.get('totalTime', '')
+                    
+                    # Extract servings/yield
+                    yield_info = recipe.get('recipeYield', recipe.get('yield', ''))
+                    if isinstance(yield_info, list):
+                        recipe_data["servings"] = yield_info[0] if yield_info else ''
+                    else:
+                        recipe_data["servings"] = str(yield_info) if yield_info else ''
+                    
+                    # Extract nutrition
+                    nutrition = recipe.get('nutrition', {})
+                    if nutrition:
+                        recipe_data["nutrition"] = nutrition
+                    
+                    # Extract categories
+                    categories = recipe.get('recipeCategory', [])
+                    if categories:
+                        if isinstance(categories, list):
+                            recipe_data["categories"] = categories
+                        else:
+                            recipe_data["categories"] = [categories]
+                    
+                    recipe_found = True
+                    break
+                    
+            except (json.JSONDecodeError, TypeError, KeyError) as e:
+                if verbose >= 2:
+                    print(f"[DEBUG] Failed to parse JSON-LD: {e}")
+                continue
+
+        # If no JSON-LD recipe found, try HTML parsing with improved selectors
+        if not recipe_found:
+            if verbose >= 1:
+                print("[INFO] No JSON-LD recipe found, trying HTML parsing...")
+        
+        # Extract title with more selectors
+        if not recipe_data["title"]:
+            title_selectors = [
+                'h1.recipe-title', 'h1[class*="recipe"]', 'h1[class*="title"]',
+                '.recipe-header h1', '.entry-title', '.post-title', '.recipe-name',
+                '[class*="recipe-title"]', '.recipe-head__title', 
+                'h1', 'h2.recipe-title', '.page-title'
+            ]
+            for selector in title_selectors:
+                title_elem = soup.select_one(selector)
+                if title_elem:
+                    title_text = title_elem.get_text(strip=True)
+                    if title_text and len(title_text) < 200:  # Reasonable title length
+                        recipe_data["title"] = title_text
+                        break
+
+        # Extract ingredients with more patterns
+        if not recipe_data["ingredients"]:
+            ingredient_selectors = [
+                '.recipe-ingredients li', '.ingredients li', '[class*="ingredient"] li',
+                '.recipe-ingredient', '.ingredient', '[class*="ingredients"] p',
+                'ul[class*="ingredient"] li', 'ol[class*="ingredient"] li',
+                '.recipe-ingredients .recipe-ingredient', '.ingredient-list li',
+                '.ingredients-section li', '#ingredients li'
+            ]
+            for selector in ingredient_selectors:
+                ingredients = soup.select(selector)
+                if ingredients:
+                    ingredient_list = []
+                    for ing in ingredients:
+                        text = ing.get_text(strip=True)
+                        # Filter out section headers and empty items
+                        if text and len(text) > 3 and not text.lower().startswith(('для ', 'for ')):
+                            ingredient_list.append(text)
+                    
+                    if ingredient_list:
+                        recipe_data["ingredients"] = ingredient_list
+                        break
+
+        # Extract instructions with more patterns
+        if not recipe_data["instructions"]:
+            instruction_selectors = [
+                '.recipe-instructions li', '.instructions li', '[class*="instruction"] li',
+                '.recipe-instruction', '.instruction', '[class*="instructions"] p',
+                'ol[class*="instruction"] li', 'ul[class*="instruction"] li',
+                '.recipe-method li', '.method li', '.recipe-directions li',
+                '.directions li', '#instructions li', '.instruction-list li'
+            ]
+            for selector in instruction_selectors:
+                instructions = soup.select(selector)
+                if instructions:
+                    instruction_list = []
+                    for inst in instructions:
+                        text = inst.get_text(strip=True)
+                        if text and len(text) > 10:  # Filter out very short text
+                            instruction_list.append(text)
+                    
+                    if instruction_list:
+                        recipe_data["instructions"] = instruction_list
+                        break
+
+        # Extract meta description if not found
+        if not recipe_data["description"]:
+            meta_desc = soup.select_one('meta[name="description"]')
+            if meta_desc:
+                recipe_data["description"] = meta_desc.get('content', '')
+
+        # Extract timing information from HTML
+        time_patterns = [
+            (r'prep.*?time.*?(\d+)\s*(min|hour|hr)', 'prep_time'),
+            (r'cook.*?time.*?(\d+)\s*(min|hour|hr)', 'cook_time'),
+            (r'total.*?time.*?(\d+)\s*(min|hour|hr)', 'total_time')
+        ]
+        
+        page_text = soup.get_text()
+        for pattern, time_type in time_patterns:
+            if not recipe_data[time_type]:
+                match = re.search(pattern, page_text, re.IGNORECASE)
+                if match:
+                    recipe_data[time_type] = f"{match.group(1)} {match.group(2)}"
+
+        # Get remaining content that might be relevant
+        content_selectors = [
+            '.recipe-content', '.recipe', '[class*="recipe"]',
+            '.entry-content', '.post-content', 'main', 'article'
+        ]
+        
+        main_content = ""
+        for selector in content_selectors:
+            content_elem = soup.select_one(selector)
+            if content_elem:
+                # Remove already extracted elements to avoid duplication
+                for tag in content_elem.find_all(['script', 'style', 'nav', 'header', 'footer']):
+                    tag.decompose()
+                main_content = unidecode(content_elem.get_text(separator="\n", strip=True))
+                break
+        
+        if not main_content:
+            main_content = unidecode(soup.get_text(separator="\n", strip=True))
+        
+        recipe_data["main_content"] = main_content[:3000]  # Limit to prevent too much text
+
+        # Clean up empty fields
+        cleaned_data = {}
+        for key, value in recipe_data.items():
+            if value and value != "" and value != []:
+                cleaned_data[key] = value
+
+        if verbose >= 1:
+            print(f"[INFO] Extracted structured recipe data with {len(cleaned_data)} fields")
+
+        return cleaned_data, None
 
     def parse_quantity(self, quantity_text):
         """Parses ingredient quantity and splits it into quantity and unit."""
@@ -667,24 +1016,54 @@ class RecipeScraper:
             yield 'Noooooot\n'
             return {"error": error_invalid_or_unsafe_url}
         else:
-            raw_text, error = self.scrape_webpage(url, verbose)
-            if error:
-                log(error)
-                yield f'"error": {error}'
-                return {"error": error}
+            if self.use_structured_scraping:
+                # Use new structured scraping method
+                yield 'using structured scraping\n'
+                structured_data, error = self.scrape_webpage_structured(url, verbose)
+                if error:
+                    log(error)
+                    yield f'"error": {error}\n'
+                    return {"error": error}
+                else:
+                    # If structured scraping got good data, use it directly
+                    if structured_data.get("title") and (structured_data.get("ingredients") or structured_data.get("instructions")):
+                        structured_recipe = {
+                            "url_recipe": url,
+                            **structured_data
+                        }
+                        self.result_get_recipe = structured_recipe
+                        yield 'structured scraping successful\n'
+                        return
+                    else:
+                        # Fall back to LLM processing if structured data is incomplete
+                        yield 'structured scraping incomplete, using LLM fallback\n'
+                        raw_text = structured_data.get("main_content", "")
+                        if not raw_text:
+                            # If no main content, fall back to old method
+                            raw_text, error = self.scrape_webpage(url, verbose)
+                            if error:
+                                log(error)
+                                yield f'"error": {error}\n'
+                                return {"error": error}
             else:
-                yield from self.parse_recipe_with_llm(raw_text, debug, verbose, log_callback=log_callback)
-                structured_recipe = self.result_parse_recipe_with_llm
-                # structured_recipe["source"] = url  # Add source URL
-                # Move 'url' to be the first key in the resulting dict
-                structured_recipe = {
-                    "url_recipe": url,
-                    **structured_recipe
-                }
+                # Use original scraping method
+                yield 'using original text scraping\n'
+                raw_text, error = self.scrape_webpage(url, verbose)
+                if error:
+                    log(error)
+                    yield f'"error": {error}'
+                    return {"error": error}
+            
+            # Process with LLM
+            yield from self.parse_recipe_with_llm(raw_text, debug, verbose, log_callback=log_callback)
+            structured_recipe = self.result_parse_recipe_with_llm
+            # Move 'url' to be the first key in the resulting dict
+            structured_recipe = {
+                "url_recipe": url,
+                **structured_recipe
+            }
 
-                self.result_get_recipe = structured_recipe
-
-                # return structured_recipe
+            self.result_get_recipe = structured_recipe
 
     def save_to_mongodb(self, recipe_data):
         if "url_recipe" not in recipe_data:
@@ -727,28 +1106,43 @@ if __name__ == "__main__":
     parser.add_argument("--debug", action="store_true", help="Enable debug mode (shows raw LLM output)")
     parser.add_argument("--verbose", type=int, choices=[0, 1, 2], default=0,
                         help="Verbosity level (0: default, 1: info, 2: detailed)")
+    parser.add_argument("--use-structured-scraping", action="store_true", default=True,
+                        help="Use structured scraping method (default: True)")
+    parser.add_argument("--use-text-scraping", action="store_true", 
+                        help="Use original text-based scraping method")
 
     args = parser.parse_args()
-    scraper = RecipeScraper(args.url, model="meta-llama-3-8b-instruct", cache_dir="cache", verbose=0, debug=False)
+    
+    # Determine scraping method based on arguments
+    use_structured = args.use_structured_scraping and not args.use_text_scraping
+    
+    scraper = RecipeScraper(
+        args.url, 
+        model="meta-llama-3-8b-instruct", 
+        cache_dir="cache", 
+        verbose=args.verbose, 
+        debug=args.debug,
+        use_structured_scraping=use_structured
+    )
 
     try:
         logging.info("[INFO] Proceeding to Scrape recipe via recipe_scrapers")
-        rs = scrape_me(url)
+        rs = scrape_me(args.url)
         recipe_data = {
             "title": rs.title(),
             "ingredients": rs.ingredients(),
             "instructions": rs.instructions(),
-            "url_recipe": url
+            "url_recipe": args.url
         }
         logging.info("[INFO] Scraped recipe via recipe_scrapers")
         if is_valid_recipe(recipe_data):
-            collection.insert_one(recipe_data)
-            recipe = recipe_data
+            scraper.collection.insert_one(recipe_data)
         else:
             raise ValueError("Invalid schema from recipe_scrapers")
     except Exception as e:
         logging.info(f"[INFO] recipe_scrapers failed ({e}), falling back to LLM-based scraper")
-        recipe_data = scraper.get_recipe(args.url, debug=args.debug, verbose=args.verbose)
+        list(scraper.get_recipe(args.url, debug=args.debug, verbose=args.verbose))
+        recipe_data = scraper.result_get_recipe
         print('a1')
 
     # if "error" not in recipe_data:
